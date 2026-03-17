@@ -194,10 +194,20 @@ export class PrintEventsGateway
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const report = this.activeDevicesBySocket.get(client.id);
+    const auth = this.socketAuthById.get(client.id);
+    const tenantId = report?.tenantId ?? auth?.tenantId;
+
+    const disconnectedDeviceIds = new Set<string>();
+    if (auth?.deviceId) {
+      disconnectedDeviceIds.add(auth.deviceId);
+    }
+    if (report?.deviceIds?.length) {
+      report.deviceIds.forEach((deviceId) => disconnectedDeviceIds.add(deviceId));
+    }
+
     if (report) {
-      this.activeDevicesBySocket.delete(client.id);
       this.server
         .to(`tenant:${report.tenantId}`)
         .emit('print.devices.active.updated', {
@@ -208,7 +218,47 @@ export class PrintEventsGateway
           disconnected: true,
         });
     }
+
+    this.activeDevicesBySocket.delete(client.id);
     this.socketAuthById.delete(client.id);
+
+    if (tenantId && disconnectedDeviceIds.size > 0) {
+      const stillActiveDeviceIds = new Set<string>();
+      this.activeDevicesBySocket.forEach((activeReport) => {
+        if (activeReport.tenantId !== tenantId) {
+          return;
+        }
+        activeReport.deviceIds.forEach((deviceId) => stillActiveDeviceIds.add(deviceId));
+      });
+
+      const offlineDeviceIds = Array.from(disconnectedDeviceIds).filter(
+        (deviceId) => !stillActiveDeviceIds.has(deviceId),
+      );
+
+      if (offlineDeviceIds.length > 0) {
+        try {
+          await this.prisma.client.printDevice.updateMany({
+            where: {
+              tenantId,
+              id: { in: offlineDeviceIds },
+              status: {
+                in: [$Enums.PrintDeviceStatus.online, $Enums.PrintDeviceStatus.busy],
+              },
+            },
+            data: {
+              status: $Enums.PrintDeviceStatus.offline,
+              statusReason: 'ws_disconnected',
+            },
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to mark devices offline on disconnect for socket ${client.id}`,
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+      }
+    }
+
     this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
