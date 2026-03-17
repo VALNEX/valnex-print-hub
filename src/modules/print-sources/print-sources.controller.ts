@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -20,12 +21,16 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { RequireScopes } from '../../common/auth/required-scope.decorator';
 import { PrintSourcesService } from './print-sources.service';
 import { CreatePrintSourceDto } from './dto/create-print-sources.dto';
 import { UpdatePrintSourceDto } from './dto/update-print-sources.dto';
 import { FilterPrintSourceDto } from './dto/filter-print-sources.dto';
 
 @ApiTags('print-sources')
+@UseGuards(JwtAuthGuard)
+@RequireScopes('admin')
 @Controller('print-sources')
 export class PrintSourcesController {
   constructor(private readonly service: PrintSourcesService) {}

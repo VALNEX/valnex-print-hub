@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -20,12 +21,16 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { RequireScopes } from '../../common/auth/required-scope.decorator';
 import { PrintRoutingRulesService } from './print-routing-rules.service';
 import { CreatePrintRoutingRuleDto } from './dto/create-print-routing-rules.dto';
 import { UpdatePrintRoutingRuleDto } from './dto/update-print-routing-rules.dto';
 import { FilterPrintRoutingRuleDto } from './dto/filter-print-routing-rules.dto';
 
 @ApiTags('print-routing-rules')
+@UseGuards(JwtAuthGuard)
+@RequireScopes('admin')
 @Controller('print-routing-rules')
 export class PrintRoutingRulesController {
   constructor(private readonly service: PrintRoutingRulesService) {}

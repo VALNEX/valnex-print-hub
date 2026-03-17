@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -20,12 +21,16 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { RequireScopes } from '../../common/auth/required-scope.decorator';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenants.dto';
 import { UpdateTenantDto } from './dto/update-tenants.dto';
 import { FilterTenantDto } from './dto/filter-tenants.dto';
 
 @ApiTags('tenants')
+@UseGuards(JwtAuthGuard)
+@RequireScopes('admin')
 @Controller('tenants')
 export class TenantsController {
   constructor(private readonly service: TenantsService) {}

@@ -1,13 +1,37 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePrintDeviceDto } from './dto/create-print-devices.dto';
 import { UpdatePrintDeviceDto } from './dto/update-print-devices.dto';
 import { FilterPrintDeviceDto } from './dto/filter-print-devices.dto';
+import { PresentPrintDeviceDto } from './dto/present-print-device.dto';
 import { Prisma, $Enums } from '../../../generated/prisma/client.js';
 
 @Injectable()
 export class PrintDevicesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private normalizeCode(source: string): string {
+    return source
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60);
+  }
+
+  private normalizeMacAddress(value: string): string {
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-f0-9]/g, '');
+
+    if (normalized.length !== 12) {
+      throw new BadRequestException('Invalid macAddress format');
+    }
+
+    return normalized.match(/.{1,2}/g)?.join(':') ?? normalized;
+  }
 
   private toDeviceStatus(value?: string): $Enums.PrintDeviceStatus | undefined {
     if (!value) {
@@ -122,6 +146,115 @@ export class PrintDevicesService {
       where: { id },
       data,
     });
+  }
+
+  async renameForTenant(id: string, tenantId: string, name: string) {
+    const current = await this.prisma.client.printDevice.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+
+    if (!current) {
+      throw new NotFoundException(`Print device ${id} not found`);
+    }
+
+    return this.prisma.client.printDevice.update({
+      where: { id: current.id },
+      data: { name },
+    });
+  }
+
+  async presentForTenant(tenantId: string, dto: PresentPrintDeviceDto) {
+    const identifier = dto.identifier.trim();
+    if (!identifier) {
+      throw new BadRequestException('identifier is required');
+    }
+
+    const normalizedMacAddress = this.normalizeMacAddress(dto.macAddress);
+
+    let device = await this.prisma.client.printDevice.findFirst({
+      where: {
+        tenantId,
+        macAddress: normalizedMacAddress,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        code: true,
+        status: true,
+      },
+    });
+
+    if (!device) {
+      device = await this.prisma.client.printDevice.findFirst({
+        where: {
+          tenantId,
+          identifier,
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          name: true,
+          code: true,
+          status: true,
+        },
+      });
+    }
+
+    if (!device) {
+      const baseCode = this.normalizeCode(dto.code?.trim() || identifier);
+      const uniqueCode = `${baseCode || 'device'}-${randomUUID().slice(0, 8)}`;
+
+      device = await this.prisma.client.printDevice.create({
+        data: {
+          tenantId,
+          name: dto.name.trim(),
+          code: uniqueCode,
+          type: dto.type ?? $Enums.PrintDeviceType.other,
+          connectionType: dto.connectionType ?? $Enums.PrintConnectionType.bridge,
+          identifier,
+          macAddress: normalizedMacAddress,
+          status: $Enums.PrintDeviceStatus.unknown,
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          name: true,
+          code: true,
+          status: true,
+        },
+      });
+    }
+
+    const refreshedDevice = await this.prisma.client.printDevice.update({
+      where: { id: device.id },
+      data: {
+        identifier,
+        macAddress: normalizedMacAddress,
+        status: $Enums.PrintDeviceStatus.unknown,
+        lastSeenAt: new Date(),
+        statusReason: 'http_helper_present',
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        code: true,
+        status: true,
+      },
+    });
+
+    return {
+      event: 'print.device.present.ok',
+      tenantId,
+      device: {
+        id: refreshedDevice.id,
+        name: refreshedDevice.name,
+        code: refreshedDevice.code,
+        status: refreshedDevice.status,
+      },
+    };
   }
 
   async updateForTenant(id: string, tenantId: string, dto: UpdatePrintDeviceDto) {

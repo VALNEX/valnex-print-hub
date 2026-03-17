@@ -23,6 +23,67 @@ export class PrintJobsService {
     $Enums.PrintJobStatus.printed,
   ];
 
+  private validateEscposJobsPayload(payload: Prisma.InputJsonValue): void {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new BadRequestException(
+        'For escpos format, payload must be an object with a jobs array',
+      );
+    }
+
+    const jobs = (payload as Record<string, unknown>).jobs;
+    if (!Array.isArray(jobs) || jobs.length === 0) {
+      throw new BadRequestException(
+        'For escpos format, payload.jobs must be a non-empty array',
+      );
+    }
+
+    const allowedTypes = new Set(['text', 'image', 'feed', 'cut']);
+
+    for (let index = 0; index < jobs.length; index += 1) {
+      const command = jobs[index];
+
+      if (!command || typeof command !== 'object' || Array.isArray(command)) {
+        throw new BadRequestException(
+          `payload.jobs[${index}] must be an object`,
+        );
+      }
+
+      const item = command as Record<string, unknown>;
+      const type = item.type;
+
+      if (typeof type !== 'string' || !allowedTypes.has(type)) {
+        throw new BadRequestException(
+          `payload.jobs[${index}].type must be one of: text, image, feed, cut`,
+        );
+      }
+
+      if (type === 'text' && typeof item.value !== 'string') {
+        throw new BadRequestException(
+          `payload.jobs[${index}] with type=text requires string field value`,
+        );
+      }
+
+      if (type === 'image' && typeof item.url !== 'string') {
+        throw new BadRequestException(
+          `payload.jobs[${index}] with type=image requires string field url`,
+        );
+      }
+
+      if (type === 'feed') {
+        const lines = item.lines;
+        if (
+          typeof lines !== 'number' ||
+          !Number.isInteger(lines) ||
+          lines < 1
+        ) {
+          throw new BadRequestException(
+            `payload.jobs[${index}] with type=feed requires integer field lines >= 1`,
+          );
+        }
+      }
+    }
+  }
+
   private toJobStatus(value?: string): $Enums.PrintJobStatus | undefined {
     if (!value) {
       return undefined;
@@ -161,6 +222,10 @@ export class PrintJobsService {
   }
 
   async create(dto: CreatePrintJobDto) {
+    if (dto.format === $Enums.PrintJobFormat.escpos) {
+      this.validateEscposJobsPayload(dto.payload);
+    }
+
     const duplicate = await this.findDuplicateJob(dto);
     if (duplicate) {
       return duplicate;
@@ -300,6 +365,18 @@ export class PrintJobsService {
       copies: job.copies,
       payload: job.payload,
     });
+
+    this.logger.log(
+      `Dispatch payload sent to printer channel: ${JSON.stringify({
+        id: job.id,
+        tenantId: job.tenantId,
+        printerId: job.printerId,
+        documentType: job.documentType,
+        format: String(job.format),
+        copies: job.copies,
+        payload: job.payload,
+      })}`,
+    );
 
     this.printEventsGateway.emitJobUpdated({
       id: job.id,

@@ -5,98 +5,270 @@
 Esta guia explica como integrar de punta a punta:
 
 - backend de impresion (este proyecto NestJS)
-- cliente de impresoras en .NET WPF
-- backend solicitante que crea trabajos de impresion
+- cliente de impresoras en .NET WPF (bridge local)
+- backend solicitante que manda a imprimir
 
-Incluye login, conexion en tiempo real, consumo de eventos, ACK/RESULT y envio de trabajos para imprimir.
+Incluye auth unificada, conexion en tiempo real, presentacion de dispositivo,
+consumo de eventos y envio de ACK/RESULT.
 
-## Escenario recomendado
+## Especificacion Operativa para IA (modo estricto)
 
-Componentes:
+Esta seccion define exactamente que debe hacer una IA cliente. Si hay conflicto
+entre ejemplos y esta seccion, esta seccion manda.
 
-1. Backend Print Hub (este proyecto)
-2. Cliente WPF en cada sede o equipo con impresoras
-3. Backend de negocio (ERP/POS/ecommerce) que solicita imprimir
+### 1) HTTP que SI usa el cliente WPF
 
-Flujo:
+- `POST /api/auth/login`
+- `POST /api/auth/printer/logout` (recomendado al cerrar sesion)
 
-1. Cliente WPF hace login de impresora por HTTP
-2. Cliente WPF abre WS con token JWT en handshake
-3. Cliente WPF presenta su dispositivo (identifier) y recibe/recupera deviceId
-4. Backend de negocio crea print job por HTTP con tenantId
-5. Backend de negocio dispara dispatch por HTTP
-6. Cliente WPF recibe print.job.dispatch
-7. Cliente WPF responde ACK
-8. Cliente WPF imprime localmente
-9. Cliente WPF responde RESULT
+Request de login (obligatorio):
+
+```json
+{
+  "identifier": "<tenantSlug>",
+  "password": "<tenantApiKey>"
+}
+```
+
+Validaciones de login (obligatorias):
+
+1. `success == true`
+2. `data.principalType == "tenant"`
+3. `data.accessToken` no vacio
+4. `data.tenantId` no vacio
+5. `data.ws.namespace == "/print"`
+
+Si falla cualquiera: NO conectar WS y marcar autenticacion invalida.
+
+### 2) Como debe presentarse por WS
+
+Namespace y auth de handshake:
+
+- Namespace: `/print`
+- Handshake auth:
+
+```json
+{
+  "token": "<accessToken>"
+}
+```
+
+Al conectar, emitir exactamente `print.device.present` con:
+
+```json
+{
+  "identifier": "<stable-installation-identifier>",
+  "macAddress": "<device-mac-address>",
+  "name": "<device-display-name>",
+  "code": "<optional-human-code>",
+  "locationId": "<optional-location-id>",
+  "type": "thermal",
+  "connectionType": "bridge"
+}
+```
+
+Regla de `identifier`:
+
+- Debe ser estable por instalacion (persistido en disco local).
+- Nunca regenerarlo por reinicio de proceso.
+
+### 3) Como debe checkear `deviceId`
+
+La IA debe tratar `deviceId` como identidad efectiva de sesion.
+
+Fuente valida de `deviceId`:
+
+1. `print.device.present.ok.device.id` (ack)
+2. `print.device.presented.device.id` (evento push)
+
+Reglas de validacion:
+
+1. Debe existir y ser string no vacio.
+2. Si llegan ambas fuentes (ack + push), deben coincidir.
+3. Si no coinciden: cerrar socket, re-login, reintentar presentacion.
+4. No usar `identifier` en lugar de `deviceId` para ACK/RESULT.
+5. Toda emision `print.job.ack` y `print.job.result` debe incluir ese `deviceId`.
+
+Pseudoflujo obligatorio:
+
+1. Login HTTP.
+2. Conectar WS con token.
+3. Emitir `print.device.present`.
+4. Esperar `deviceId` valido.
+5. Emitir `subscribe` con `deviceId`.
+6. Emitir `print.devices.active.report` con `deviceId`.
+7. Procesar jobs.
+
+### 4) WS que SI usa el cliente WPF
+
+Eventos cliente -> servidor:
+
+- `print.device.present`
+- `subscribe`
+- `print.devices.active.report`
+- `print.job.ack`
+- `print.job.result`
+- `print.auth.logout` (opcional)
+
+Eventos servidor -> cliente:
+
+- `print.device.presented`
+- `print.job.dispatch`
+- `print.job.updated`
+- `print.job.log.created`
+- `print.devices.active.updated`
+
+Reglas de procesamiento de job:
+
+1. Al recibir `print.job.dispatch`, enviar `print.job.ack` inmediato.
+2. Ejecutar impresion local.
+3. Enviar `print.job.result` final con `status` en: `success`, `warning`, `error`.
+4. Incluir siempre `jobId` y `deviceId` correctos.
+
+### 5) Formato de presentacion para otra IA (resumen corto)
+
+Usar este bloque literal como contrato minimo:
+
+```yaml
+integration_mode: printer-client
+http:
+  login:
+    method: POST
+    path: /api/auth/login
+    body:
+      identifier: <tenantSlug>
+      password: <tenantApiKey>
+  logout:
+    method: POST
+    path: /api/auth/printer/logout
+ws:
+  namespace: /print
+  auth:
+    token: <accessToken>
+  emit:
+    - print.device.present
+    - subscribe
+    - print.devices.active.report
+    - print.job.ack
+    - print.job.result
+  on:
+    - print.device.presented
+    - print.job.dispatch
+device_identity:
+  source_events:
+    - print.device.present.ok.device.id
+    - print.device.presented.device.id
+  rules:
+    - must_be_non_empty
+    - ack_and_push_must_match
+    - use_deviceId_for_ack_and_result
+```
+
+## Cambio clave de arquitectura
+
+Ahora existen dos tipos de sesion:
+
+- `admin`: para gestionar catalogo y configuraciones (protegido)
+- `tenant` (scope `printer-client`): para cliente WPF de impresora
+
+Y para negocio externo quedaron solo endpoints publicos de impresion:
+
+- `GET /api/public/print/devices?tenantSlug=...`
+- `POST /api/public/print/submit`
+
+## Pregunta central: como sabe WPF su deviceId
+
+Regla de oro:
+
+1. WPF define un `identifier` estable por instalacion (no cambia entre reinicios)
+2. WPF envia ese `identifier` con `print.device.present`
+3. El backend busca `tenantId + identifier`
+4. Si existe, regresa el mismo `deviceId`
+5. Si no existe, crea el dispositivo y regresa un `deviceId` nuevo
+
+Entonces, tu app no necesita inventar `deviceId`.
+Solo debe mantener estable el `identifier`.
 
 ## Requisitos
 
 - .NET 6 o superior
 - WPF
-- Conectividad saliente HTTPS/WSS hacia el Print Hub
-- Credenciales por tenant:
-  - username: tenant slug
-  - password: tenant apiKey
-- Seguridad de credenciales:
-  - el apiKey se entrega en claro una sola vez al crear tenant
-  - en base de datos se almacena solo el hash del apiKey
+- Conectividad saliente HTTPS/WSS hacia Print Hub
+- Credenciales de tenant:
+  - `identifier` para login HTTP: `tenantSlug`
+  - `password` para login HTTP: `tenant apiKey`
+- Seguridad:
+  - el apiKey se entrega una sola vez al crear/rotar tenant
+  - en base de datos solo se guarda hash
 
-## Endpoints y eventos usados
+## Endpoints y eventos usados por WPF
 
 HTTP:
 
-- POST /api/auth/printer/login
-- POST /api/auth/printer/logout
-- POST /api/print-jobs
-- POST /api/print-jobs/:id/dispatch
+- `POST /api/auth/login` (unificado)
+- `POST /api/auth/printer/logout`
 
 WS namespace:
 
-- /print
+- `/print`
 
-WS eventos cliente -> servidor:
+WS cliente -> servidor:
 
-- subscribe
-- print.devices.active.report
-- print.devices.active.get
-- print.job.ack
-- print.job.result
-- print.auth.logout (opcional)
+- `print.device.present`
+- `subscribe`
+- `print.devices.active.report`
+- `print.job.ack`
+- `print.job.result`
+- `print.auth.logout` (opcional)
 
-WS eventos servidor -> cliente:
+WS servidor -> cliente:
 
-- print.job.dispatch
-- print.job.updated
-- print.job.log.created
-- print.devices.active.updated
+- `print.device.presented`
+- `print.job.dispatch`
+- `print.job.updated`
+- `print.job.log.created`
+- `print.devices.active.updated`
 
-## Paso 1: Login del cliente WPF
+## Flujo recomendado WPF (bridge)
+
+1. Login HTTP por `POST /api/auth/login` con credenciales tenant.
+2. Validar que `principalType == tenant`.
+3. Abrir WS con `auth.token = accessToken`.
+4. Al conectar, emitir `print.device.present` con `identifier` estable.
+5. Capturar `print.device.presented` y guardar `device.id` en memoria de sesion.
+6. Emitir `subscribe` con `deviceId`.
+7. Emitir `print.devices.active.report` para marcar presencia.
+8. Al recibir `print.job.dispatch`, responder ACK.
+9. Imprimir localmente.
+10. Responder RESULT (`success`, `warning` o `error`).
+
+## Paso 1: Login unificado
 
 Request:
 
 ```http
-POST /api/auth/printer/login
+POST /api/auth/login
 Content-Type: application/json
 
 {
-  "username": "tenant-slug",
+  "identifier": "valnex",
   "password": "tenant-api-key"
 }
 ```
 
-Response esperada:
+Response esperada para WPF de tenant:
 
 ```json
 {
   "success": true,
-  "message": "Printer login successful",
+  "message": "Login successful",
   "data": {
+    "principalType": "tenant",
     "tokenType": "Bearer",
     "accessToken": "<jwt>",
     "expiresAt": "2026-03-14T08:00:00.000Z",
     "tenantId": "a1f4f8fe-1111-4444-8888-0f9b4d4c1a11",
-    "tenantSlug": "tenant-slug",
+    "tenantSlug": "valnex",
     "ws": {
       "namespace": "/print",
       "auth": {
@@ -107,29 +279,31 @@ Response esperada:
 }
 ```
 
-Guardar en memoria segura del cliente:
+Si recibes `principalType = admin`, no es un bridge de impresora.
 
-- accessToken
-- expiresAt
-- tenantId
+## Paso 2: Identifier estable por instalacion
 
-## Paso 3: Presentar dispositivo y obtener deviceId de sesion
+No uses un identifier efimero por proceso.
 
-Una vez conectado por WS, el cliente presenta su identidad fisica/logica con `identifier`.
-El backend:
+Recomendado:
 
-- si existe un dispositivo para ese tenant+identifier: devuelve ese deviceId
-- si no existe: lo crea y devuelve el nuevo deviceId
+1. En primer arranque, generar GUID local.
+2. Guardarlo en archivo local protegido (ejemplo ProgramData).
+3. Reusar siempre ese valor.
 
-Evento cliente -> servidor:
+Ejemplo de valor final:
 
-`print.device.present`
+- `WPF-FRONT-01`
+- `WPF-<MachineName>-<GuidPersistido>`
 
-Payload:
+## Paso 3: Conexion WS + presentacion de dispositivo
+
+Payload de presentacion:
 
 ```json
 {
   "identifier": "WPF-FRONT-01",
+  "macAddress": "AA:BB:CC:DD:EE:FF",
   "name": "Front Desk Printer",
   "code": "front-desk",
   "locationId": "optional-location-id",
@@ -138,32 +312,15 @@ Payload:
 }
 ```
 
-Respuesta esperada:
+Respuesta/logica esperada:
 
-```json
-{
-  "event": "print.device.present.ok",
-  "tenantId": "a1f4f8fe-1111-4444-8888-0f9b4d4c1a11",
-  "device": {
-    "id": "device-id",
-    "name": "Front Desk Printer",
-    "code": "front-desk-1234abcd",
-    "status": "unknown"
-  }
-}
-```
+- `print.device.present.ok` (ack del request)
+- `print.device.presented` (evento push)
 
-Adicionalmente, el servidor emite al cliente autenticado:
+En ambos llega `device.id`.
+Ese `device.id` es el que debes usar en `subscribe`, `ack` y `result`.
 
-- `print.device.presented`
-
-Ese evento trae el mismo `device.id` para que el cliente lo guarde en memoria de sesion.
-
-## Paso 2: Conexion WS con handshake JWT
-
-El gateway valida token en handshake. Si no existe o es invalido, desconecta.
-
-Ejemplo con Socket.IO client para .NET (conceptual):
+## Ejemplo .NET WPF (conceptual)
 
 ```csharp
 using SocketIOClient;
@@ -182,19 +339,19 @@ public class PrintHubClient
         _http = http;
     }
 
-    public async Task LoginAsync(string baseUrl, string username, string password)
+    public async Task LoginTenantAsync(string baseUrl, string tenantSlug, string apiKey)
     {
-        var loginResponse = await _http.PostAsJsonAsync($"{baseUrl}/api/auth/printer/login", new
+        var resp = await _http.PostAsJsonAsync($"{baseUrl}/api/auth/login", new
         {
-            username,
-        password
+            identifier = tenantSlug,
+            password = apiKey
         });
 
-        loginResponse.EnsureSuccessStatusCode();
+        resp.EnsureSuccessStatusCode();
+        var body = await resp.Content.ReadFromJsonAsync<AuthEnvelope>();
 
-        var body = await loginResponse.Content.ReadFromJsonAsync<LoginEnvelope>();
-        if (body == null || body.Data == null)
-            throw new InvalidOperationException("Invalid login response");
+        if (body?.Data is null || body.Data.PrincipalType != "tenant")
+            throw new InvalidOperationException("Login no corresponde a tenant printer-client");
 
         _token = body.Data.AccessToken;
         _tenantId = body.Data.TenantId;
@@ -204,10 +361,7 @@ public class PrintHubClient
     {
         _socket = new SocketIO($"{baseUrl}/print", new SocketIOOptions
         {
-            Auth = new Dictionary<string, string>
-            {
-                ["token"] = _token
-            },
+            Auth = new Dictionary<string, string> { ["token"] = _token },
             Reconnection = true,
             ReconnectionAttempts = 20,
             ReconnectionDelay = 2000
@@ -215,30 +369,26 @@ public class PrintHubClient
 
         _socket.OnConnected += async (_, _) =>
         {
-          var machineIdentifier = BuildMachineIdentifier();
+            var identifier = LoadOrCreateStableIdentifier();
 
-          await _socket.EmitAsync("print.device.present", new
-          {
-            identifier = machineIdentifier,
-            name = Environment.MachineName,
-            connectionType = "bridge"
-          });
+            await _socket.EmitAsync("print.device.present", new
+            {
+                identifier,
+                name = Environment.MachineName,
+                connectionType = "bridge"
+            });
         };
 
         _socket.On("print.device.presented", async res =>
         {
-          var presented = res.GetValue<DevicePresentedEnvelope>();
-          _deviceId = presented.Device.Id;
+            var presented = res.GetValue<DevicePresentedEnvelope>();
+            _deviceId = presented.Device.Id;
 
-          await _socket!.EmitAsync("subscribe", new
-          {
-            deviceId = _deviceId
-          });
-
-          await _socket.EmitAsync("print.devices.active.report", new
-          {
-            deviceIds = new[] { _deviceId }
-          });
+            await _socket!.EmitAsync("subscribe", new { deviceId = _deviceId });
+            await _socket.EmitAsync("print.devices.active.report", new
+            {
+                deviceIds = new[] { _deviceId }
+            });
         });
 
         _socket.On("print.job.dispatch", async res =>
@@ -250,11 +400,6 @@ public class PrintHubClient
         await _socket.ConnectAsync();
     }
 
-    private string BuildMachineIdentifier()
-    {
-      return $"WPF-{Environment.MachineName}";
-    }
-
     private async Task HandleDispatchAsync(DispatchJob job)
     {
         if (_socket == null) return;
@@ -263,13 +408,11 @@ public class PrintHubClient
         {
             jobId = job.Id,
             deviceId = _deviceId,
-            message = "Job received by WPF client"
+            message = "Job received"
         });
 
         try
         {
-            // Aqui llamas tu motor real de impresion local.
-            // Ejemplo: spooler, driver ESC/POS, impresora de red, etc.
             await PrintLocalAsync(job);
 
             await _socket.EmitAsync("print.job.result", new
@@ -278,8 +421,7 @@ public class PrintHubClient
                 deviceId = _deviceId,
                 status = "success",
                 code = "PRINT_OK",
-                message = "Printed successfully",
-                raw = new { source = "wpf", ts = DateTimeOffset.UtcNow }
+                message = "Printed successfully"
             });
         }
         catch (Exception ex)
@@ -295,145 +437,110 @@ public class PrintHubClient
         }
     }
 
+    private string LoadOrCreateStableIdentifier()
+    {
+        // Persistir y reusar siempre el mismo valor por instalacion.
+        return $"WPF-{Environment.MachineName}";
+    }
+
     private Task PrintLocalAsync(DispatchJob job)
     {
-        // Implementacion local de impresion.
+        // Integrar spooler/driver real.
         return Task.CompletedTask;
     }
 }
 
-public record LoginEnvelope(LoginData? Data);
-public record LoginData(string AccessToken, string TenantId);
+public record AuthEnvelope(AuthData? Data);
+public record AuthData(string PrincipalType, string AccessToken, string TenantId);
 public record DispatchJob(string Id, string DocumentType, string Format, object Payload);
 public record DevicePresentedEnvelope(DevicePresented Device);
 public record DevicePresented(string Id, string Name, string Code);
 ```
 
-## Paso 4: Envio de impresion desde backend de negocio
+## Flujo para backend de negocio (publico)
 
-Importante: este endpoint NO requiere sesion hoy. Debe enviar tenantId en payload.
+Tu ERP/POS/ecommerce ya no necesita usar endpoints admin para imprimir.
 
-### 3.1 Crear print job
+Regla obligatoria para tickets `escpos`:
+
+- `payload` debe ser objeto con propiedad `jobs`.
+- `payload.jobs` debe ser array no vacio.
+- Comandos soportados: `text`, `image`, `feed`, `cut`.
+
+1. Consultar impresoras disponibles:
 
 ```http
-POST /api/print-jobs
+GET /api/public/print/devices?tenantSlug=valnex
+```
+
+2. Enviar impresion (crea y despacha):
+
+```http
+POST /api/public/print/submit
 Content-Type: application/json
 
 {
-  "tenantId": "a1f4f8fe-1111-4444-8888-0f9b4d4c1a11",
+  "tenantSlug": "valnex",
   "documentType": "ticket",
   "format": "escpos",
   "payload": {
-    "lines": [
-      "VENTA #10025",
-      "TOTAL: 249.00"
+    "jobs": [
+      {
+        "type": "text",
+        "value": "KON KENN\\n",
+        "align": "center",
+        "bold": true,
+        "width": 2,
+        "height": 2
+      },
+      {
+        "type": "text",
+        "value": "SALIDA\\n",
+        "align": "center",
+        "bold": true,
+        "width": 1,
+        "height": 1
+      },
+      {
+        "type": "feed",
+        "lines": 1
+      },
+      {
+        "type": "cut"
+      }
     ]
   },
+  "printerCode": "front-desk",
   "requestId": "REQ-10025",
-  "externalId": "ORDER-10025",
-  "contentHash": "sha256:..."
+  "externalId": "ORDER-10025"
 }
 ```
 
-### 3.2 Hacer dispatch
-
-```http
-POST /api/print-jobs/{jobId}/dispatch
-```
-
-Notas:
-
-- Si el job no tiene printerId asignado, dispatch devuelve error.
-- Si ya estaba sent/processing/printed, no lo redispara.
-
-## Mapeo recomendado WPF -> backend
-
-### Evento de entrada al cliente
-
-print.job.dispatch:
-
-- id
-- tenantId
-- printerId
-- documentType
-- format
-- copies
-- payload
-
-### Evento de salida del cliente
-
-print.job.ack:
-
-- jobId (requerido)
-- deviceId (recomendado)
-- message (opcional)
-
-print.job.result:
-
-- jobId (requerido)
-- deviceId (recomendado)
-- status: success | warning | error
-- code (opcional)
-- message (opcional)
-- raw (opcional JSON)
-
-## Si tu cliente WPF ya trae un servidor interno
-
-Si tu WPF ya recibe peticiones locales en su propio servidor interno (por ejemplo HTTP local), puedes mantenerlo y adaptar asi:
-
-1. WPF recibe print.job.dispatch via WS
-2. WPF traduce el payload a su API local interna
-3. API local imprime
-4. WPF responde ACK/RESULT al Print Hub
-
-Ventaja:
-
-- No rompes tu arquitectura existente de motor local
-- El Print Hub sigue siendo orquestador y auditor
-
-## Reintentos y resiliencia
-
-- Si no se envia ACK a tiempo, el backend mueve el job a retrying o failed segun intentos.
-- Mantener reconexion WS activa en WPF.
-- Reportar print.devices.active.report tras reconexion.
-
 ## Seguridad operativa recomendada
 
-- Guardar token solo en memoria (evitar disco).
-- Renovar login antes de expiracion.
-- En logout o cierre de app, llamar:
-  - WS: print.auth.logout o
-  - HTTP: POST /api/auth/printer/logout con Bearer token
-- Forzar TLS en todos los entornos (HTTPS/WSS).
-
-## Prueba de integracion minima
-
-1. Login exitoso de WPF.
-2. Conexion WS y subscribe.
-3. Create job con tenantId.
-4. Dispatch job.
-5. ACK recibido por backend.
-6. RESULT success recibido por backend.
-7. Verificar estado final printed.
-8. Verificar logs en print-job-logs.
+- Guardar JWT en memoria (no en disco).
+- Rehacer login antes de expiracion.
+- En cierre de app, logout:
+  - `POST /api/auth/printer/logout` con Bearer token, o
+  - `print.auth.logout` por WS.
+- TLS obligatorio en todos los entornos (HTTPS/WSS).
 
 ## Errores comunes y solucion
 
-- Missing auth token en WS:
-  - No enviaste auth.token en handshake.
-- tenant_mismatch en ACK/RESULT:
-  - Token pertenece a otro tenant o job equivocado.
-- invalid_state_transition en RESULT:
-  - Enviaste resultado fuera de secuencia (ejemplo antes de sent/processing).
-- dispatch sin impresora:
-  - El job no tiene printerId asignado.
+- `Missing bearer token` en endpoints protegidos:
+  - falta Authorization Bearer o token expirado.
+- `Invalid token scope`:
+  - intentaste endpoint admin con token tenant o viceversa.
+- `tenant_mismatch` en ACK/RESULT:
+  - job o token pertenece a tenant diferente.
+- `No available printer for tenant` en submit publico:
+  - no hay impresora online/busy para ese tenant.
 
-## Checklist de salida a QA
+## Checklist QA minima
 
-- Login WPF OK
-- Reconexion WS OK
-- Reporte de activos OK
-- ACK/RESULT OK
-- Flujo completo create -> dispatch -> printed OK
-- Manejo de error local -> failed OK
-- Sin duplicados con requestId/externalId/contentHash OK
+- Login unificado devuelve `principalType = tenant` para WPF.
+- Conexion WS y presentacion de dispositivo OK.
+- `deviceId` recuperado correctamente en `print.device.presented`.
+- `print.job.dispatch` recibido por WPF.
+- ACK y RESULT recibidos por backend.
+- Flujo publico `devices -> submit -> printed/failed` OK.

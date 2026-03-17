@@ -10,6 +10,7 @@ import { PrintSourcesModule } from './modules/print-sources/print-sources.module
 import { PrintRoutingRulesModule } from './modules/print-routing-rules/print-routing-rules.module';
 import { PrintJobsModule } from './modules/print-jobs/print-jobs.module';
 import { PrintJobLogsModule } from './modules/print-job-logs/print-job-logs.module';
+import { PublicPrintModule } from './modules/public-print/public-print.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PrintJobLogsModule } from './modules/print-job-logs/print-job-logs.modu
     PrintRoutingRulesModule,
     PrintJobsModule,
     PrintJobLogsModule,
+    PublicPrintModule,
   ],
   controllers: [AppController],
   providers: [AppService],

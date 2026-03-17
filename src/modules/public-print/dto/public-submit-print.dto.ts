@@ -3,7 +3,6 @@ import { $Enums } from '../../../../generated/prisma/client.js';
 import { Prisma } from '../../../../generated/prisma/client.js';
 import {
   IsEnum,
-  IsInt,
   IsObject,
   IsOptional,
   IsString,
@@ -12,10 +11,11 @@ import {
   Min,
 } from 'class-validator';
 
-export class CreatePrintJobDto {
-  @ApiProperty({ example: 'a1f4f8fe-1111-4444-8888-0f9b4d4c1a11' })
-  @IsUUID()
-  tenantId!: string;
+export class PublicSubmitPrintDto {
+  @ApiProperty({ example: 'valnex' })
+  @IsString()
+  @MaxLength(100)
+  tenantSlug!: string;
 
   @ApiProperty({ example: 'ticket' })
   @IsString()
@@ -26,9 +26,40 @@ export class CreatePrintJobDto {
   @IsEnum($Enums.PrintJobFormat)
   format!: $Enums.PrintJobFormat;
 
-  @ApiProperty({ example: { lines: ['A', 'B'] } })
+  @ApiProperty({
+    example: {
+      jobs: [
+        {
+          type: 'text',
+          value: 'KON KENN\\n',
+          align: 'center',
+          bold: true,
+          width: 2,
+          height: 2,
+        },
+        {
+          type: 'feed',
+          lines: 1,
+        },
+        {
+          type: 'cut',
+        },
+      ],
+    },
+  })
   @IsObject()
   payload!: Prisma.InputJsonValue;
+
+  @ApiPropertyOptional({ example: 'front-desk' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  printerCode?: string;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Min(1)
+  copies?: number;
 
   @ApiPropertyOptional({ example: 'REQ-10001' })
   @IsOptional()
@@ -47,31 +78,4 @@ export class CreatePrintJobDto {
   @IsString()
   @MaxLength(128)
   contentHash?: string;
-
-  @ApiPropertyOptional({ enum: $Enums.PrintJobStatus, example: $Enums.PrintJobStatus.queued })
-  @IsOptional()
-  @IsEnum($Enums.PrintJobStatus)
-  status?: $Enums.PrintJobStatus;
-
-  @ApiPropertyOptional({ example: 'b3f4f8fe-2222-4444-8888-0f9b4d4c1b22' })
-  @IsOptional()
-  @IsUUID()
-  printerId?: string;
-
-  @ApiPropertyOptional({ example: 'front-desk' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  printerCode?: string;
-
-  @ApiPropertyOptional({ example: 'b3f4f8fe-3333-4444-8888-0f9b4d4c1b33' })
-  @IsOptional()
-  @IsUUID()
-  locationId?: string;
-
-  @ApiPropertyOptional({ example: 1 })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  copies?: number;
 }

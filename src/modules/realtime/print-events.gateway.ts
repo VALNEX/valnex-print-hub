@@ -48,6 +48,7 @@ type DevicePresentPayload = {
   identifier: string;
   name?: string;
   code?: string;
+  macAddress?: string;
   locationId?: string;
   type?: $Enums.PrintDeviceType;
   connectionType?: $Enums.PrintConnectionType;
@@ -242,6 +243,23 @@ export class PrintEventsGateway
       .slice(0, 60);
   }
 
+  private normalizeMacAddress(value?: string): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-f0-9]/g, '');
+
+    if (normalized.length !== 12) {
+      return null;
+    }
+
+    return normalized.match(/.{1,2}/g)?.join(':') ?? null;
+  }
+
   @SubscribeMessage('print.device.present')
   async handleDevicePresent(
     @ConnectedSocket() client: Socket,
@@ -260,19 +278,41 @@ export class PrintEventsGateway
       };
     }
 
-    let device = await this.prisma.client.printDevice.findFirst({
-      where: {
-        tenantId: auth.tenantId,
-        identifier,
-      },
-      select: {
-        id: true,
-        tenantId: true,
-        name: true,
-        code: true,
-        status: true,
-      },
-    });
+    const normalizedMacAddress = this.normalizeMacAddress(payload.macAddress);
+
+    let device = normalizedMacAddress
+      ? await this.prisma.client.printDevice.findFirst({
+          where: {
+            tenantId: auth.tenantId,
+            macAddress: normalizedMacAddress,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            name: true,
+            code: true,
+            status: true,
+            macAddress: true,
+          },
+        })
+      : null;
+
+    if (!device) {
+      device = await this.prisma.client.printDevice.findFirst({
+        where: {
+          tenantId: auth.tenantId,
+          identifier,
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          name: true,
+          code: true,
+          status: true,
+          macAddress: true,
+        },
+      });
+    }
 
     if (!device) {
       const baseCode = this.normalizeCode(payload.code?.trim() || identifier);
@@ -287,6 +327,7 @@ export class PrintEventsGateway
           type: payload.type ?? $Enums.PrintDeviceType.other,
           connectionType: payload.connectionType ?? $Enums.PrintConnectionType.bridge,
           identifier,
+          macAddress: normalizedMacAddress,
           status: $Enums.PrintDeviceStatus.unknown,
         },
         select: {
@@ -295,25 +336,52 @@ export class PrintEventsGateway
           name: true,
           code: true,
           status: true,
+          macAddress: true,
         },
       });
+    } else if (!device.macAddress && normalizedMacAddress) {
+      await this.prisma.client.printDevice.update({
+        where: { id: device.id },
+        data: { macAddress: normalizedMacAddress },
+      });
+
+      device = {
+        ...device,
+        macAddress: normalizedMacAddress,
+      };
     }
+
+    const refreshedDevice = await this.prisma.client.printDevice.update({
+      where: { id: device.id },
+      data: {
+        status: $Enums.PrintDeviceStatus.online,
+        lastSeenAt: new Date(),
+        statusReason: null,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        code: true,
+        status: true,
+      },
+    });
 
     this.socketAuthById.set(client.id, {
       ...auth,
-      deviceId: device.id,
+      deviceId: refreshedDevice.id,
     });
 
-    await client.join(`device:${device.id}`);
+    await client.join(`device:${refreshedDevice.id}`);
 
     const presentedPayload = {
       event: 'print.device.present.ok',
       tenantId: auth.tenantId,
       device: {
-        id: device.id,
-        name: device.name,
-        code: device.code,
-        status: device.status,
+        id: refreshedDevice.id,
+        name: refreshedDevice.name,
+        code: refreshedDevice.code,
+        status: refreshedDevice.status,
       },
     };
 

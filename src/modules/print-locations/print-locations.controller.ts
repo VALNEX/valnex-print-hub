@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -20,12 +21,16 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { RequireScopes } from '../../common/auth/required-scope.decorator';
 import { PrintLocationsService } from './print-locations.service';
 import { CreatePrintLocationDto } from './dto/create-print-locations.dto';
 import { UpdatePrintLocationDto } from './dto/update-print-locations.dto';
 import { FilterPrintLocationDto } from './dto/filter-print-locations.dto';
 
 @ApiTags('print-locations')
+@UseGuards(JwtAuthGuard)
+@RequireScopes('admin')
 @Controller('print-locations')
 export class PrintLocationsController {
   constructor(private readonly service: PrintLocationsService) {}

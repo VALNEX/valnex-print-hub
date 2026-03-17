@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -20,12 +21,16 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { RequireScopes } from '../../common/auth/required-scope.decorator';
 import { PrintJobLogsService } from './print-job-logs.service';
 import { CreatePrintJobLogDto } from './dto/create-print-job-logs.dto';
 import { UpdatePrintJobLogDto } from './dto/update-print-job-logs.dto';
 import { FilterPrintJobLogDto } from './dto/filter-print-job-logs.dto';
 
 @ApiTags('print-job-logs')
+@UseGuards(JwtAuthGuard)
+@RequireScopes('admin')
 @Controller('print-job-logs')
 export class PrintJobLogsController {
   constructor(private readonly service: PrintJobLogsService) {}

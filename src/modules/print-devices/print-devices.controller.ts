@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -20,12 +21,20 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { RequireScopes } from '../../common/auth/required-scope.decorator';
+import { CurrentAuth } from '../../common/auth/current-auth.decorator';
+import type { AuthTokenPayload } from '../../common/auth/auth.types';
 import { PrintDevicesService } from './print-devices.service';
 import { CreatePrintDeviceDto } from './dto/create-print-devices.dto';
 import { UpdatePrintDeviceDto } from './dto/update-print-devices.dto';
 import { FilterPrintDeviceDto } from './dto/filter-print-devices.dto';
+import { RenamePrintDeviceDto } from './dto/rename-print-device.dto';
+import { PresentPrintDeviceDto } from './dto/present-print-device.dto';
 
 @ApiTags('print-devices')
+@UseGuards(JwtAuthGuard)
+@RequireScopes('admin')
 @Controller('print-devices')
 export class PrintDevicesController {
   constructor(private readonly service: PrintDevicesService) {}
@@ -147,6 +156,77 @@ export class PrintDevicesController {
   ) {
     const data = await this.service.update(id, dto);
     return buildSuccessResponse(req.path, 'Print Devices updated successfully', data);
+  }
+
+  @Patch(':id/rename')
+  @RequireScopes('admin', 'printer-client')
+  @ApiOperation({
+    summary:
+      'Rename print device. Admin can rename any device; printer-client only within its tenant',
+  })
+  @ApiParam({ name: 'id', example: '11111111-2222-3333-4444-555555555555' })
+  @ApiBody({ type: RenamePrintDeviceDto })
+  @ApiOkResponse({
+    description: 'Print device renamed',
+    schema: {
+      example: {
+        success: true,
+        message: 'Print device renamed successfully',
+        data: {
+          id: '11111111-2222-3333-4444-555555555555',
+          tenantId: 'a1f4f8fe-1111-4444-8888-0f9b4d4c1a11',
+          name: 'Bascula Patio Norte',
+        },
+      },
+    },
+  })
+  async rename(
+    @Param('id') id: string,
+    @Body() dto: RenamePrintDeviceDto,
+    @CurrentAuth() auth: AuthTokenPayload,
+    @Req() req: Request,
+  ) {
+    const data =
+      auth.scope === 'admin'
+        ? await this.service.update(id, { name: dto.name })
+        : await this.service.renameForTenant(id, auth.tenantId, dto.name);
+
+    return buildSuccessResponse(req.path, 'Print device renamed successfully', data);
+  }
+
+  @Post('present')
+  @RequireScopes('printer-client')
+  @ApiOperation({
+    summary:
+      'HTTP device presentation for printer-client apps. Matches by tenant+macAddress, then tenant+identifier',
+  })
+  @ApiBody({ type: PresentPrintDeviceDto })
+  @ApiOkResponse({
+    description: 'Device presented and resolved',
+    schema: {
+      example: {
+        success: true,
+        message: 'Print device presented successfully',
+        data: {
+          event: 'print.device.present.ok',
+          tenantId: 'a1f4f8fe-1111-4444-8888-0f9b4d4c1a11',
+          device: {
+            id: '11111111-2222-3333-4444-555555555555',
+            name: 'Bascula Patio Norte',
+            code: 'mobile-patio-norte-1234abcd',
+            status: 'online',
+          },
+        },
+      },
+    },
+  })
+  async present(
+    @Body() dto: PresentPrintDeviceDto,
+    @CurrentAuth() auth: AuthTokenPayload,
+    @Req() req: Request,
+  ) {
+    const data = await this.service.presentForTenant(auth.tenantId, dto);
+    return buildSuccessResponse(req.path, 'Print device presented successfully', data);
   }
 
   @Delete(':id')

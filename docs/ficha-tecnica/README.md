@@ -32,6 +32,8 @@ Dar una guia unica para entender:
 - [07-operacion-observabilidad.md](07-operacion-observabilidad.md)
 - [08-pruebas-checklist.md](08-pruebas-checklist.md)
 - [09-integracion-cliente-wpf.md](09-integracion-cliente-wpf.md)
+- [10-instructivo-emisor-impresion.md](10-instructivo-emisor-impresion.md)
+- [11-presentacion-y-resolucion-de-nombre.md](11-presentacion-y-resolucion-de-nombre.md)
 
 ## Stack
 
