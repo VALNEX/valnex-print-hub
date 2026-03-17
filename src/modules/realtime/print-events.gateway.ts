@@ -133,7 +133,6 @@ export class PrintEventsGateway
 
     const now = Math.floor(Date.now() / 1000);
     if (auth.exp && now >= auth.exp) {
-      this.socketAuthById.delete(client.id);
       client.disconnect(true);
       return {
         event: 'print.auth.required',
@@ -142,7 +141,6 @@ export class PrintEventsGateway
     }
 
     if (this.tokenRevocationService.isRevoked(auth.jti)) {
-      this.socketAuthById.delete(client.id);
       client.disconnect(true);
       return {
         event: 'print.auth.required',
@@ -197,7 +195,9 @@ export class PrintEventsGateway
   async handleDisconnect(client: Socket) {
     const report = this.activeDevicesBySocket.get(client.id);
     const auth = this.socketAuthById.get(client.id);
-    const tenantId = report?.tenantId ?? auth?.tenantId;
+    const tenantRoom = Array.from(client.rooms).find((room) => room.startsWith('tenant:'));
+    const tenantIdFromRoom = tenantRoom ? tenantRoom.slice('tenant:'.length) : undefined;
+    const tenantId = report?.tenantId ?? auth?.tenantId ?? tenantIdFromRoom;
 
     const disconnectedDeviceIds = new Set<string>();
     if (auth?.deviceId) {
