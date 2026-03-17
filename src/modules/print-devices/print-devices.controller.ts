@@ -214,7 +214,7 @@ export class PrintDevicesController {
             id: '11111111-2222-3333-4444-555555555555',
             name: 'Bascula Patio Norte',
             code: 'mobile-patio-norte-1234abcd',
-            status: 'online',
+            status: 'unknown',
           },
         },
       },

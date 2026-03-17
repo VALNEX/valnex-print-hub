@@ -227,14 +227,20 @@ export class PrintDevicesService {
       });
     }
 
+    const preserveOnlineStatus =
+      device.status === $Enums.PrintDeviceStatus.online ||
+      device.status === $Enums.PrintDeviceStatus.busy;
+
     const refreshedDevice = await this.prisma.client.printDevice.update({
       where: { id: device.id },
       data: {
         identifier,
         macAddress: normalizedMacAddress,
-        status: $Enums.PrintDeviceStatus.unknown,
+        status: preserveOnlineStatus
+          ? device.status
+          : $Enums.PrintDeviceStatus.unknown,
         lastSeenAt: new Date(),
-        statusReason: 'http_helper_present',
+        statusReason: preserveOnlineStatus ? null : 'http_helper_present',
       },
       select: {
         id: true,

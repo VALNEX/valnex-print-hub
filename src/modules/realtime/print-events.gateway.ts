@@ -206,6 +206,14 @@ export class PrintEventsGateway
     if (report?.deviceIds?.length) {
       report.deviceIds.forEach((deviceId) => disconnectedDeviceIds.add(deviceId));
     }
+    client.rooms.forEach((room) => {
+      if (room.startsWith('device:')) {
+        const roomDeviceId = room.slice('device:'.length);
+        if (roomDeviceId) {
+          disconnectedDeviceIds.add(roomDeviceId);
+        }
+      }
+    });
 
     if (report) {
       this.server
@@ -237,7 +245,7 @@ export class PrintEventsGateway
 
       if (offlineDeviceIds.length > 0) {
         try {
-          await this.prisma.client.printDevice.updateMany({
+          const result = await this.prisma.client.printDevice.updateMany({
             where: {
               tenantId,
               id: { in: offlineDeviceIds },
@@ -250,13 +258,25 @@ export class PrintEventsGateway
               statusReason: 'ws_disconnected',
             },
           });
+
+          this.logger.debug(
+            `WS disconnect status sync: socket=${client.id} tenant=${tenantId} offlineCandidates=${offlineDeviceIds.join(',')} updated=${result.count}`,
+          );
         } catch (error) {
           this.logger.error(
             `Failed to mark devices offline on disconnect for socket ${client.id}`,
             error instanceof Error ? error.stack : undefined,
           );
         }
+      } else {
+        this.logger.debug(
+          `WS disconnect status sync skipped: socket=${client.id} tenant=${tenantId} no_offline_candidates`,
+        );
       }
+    } else {
+      this.logger.debug(
+        `WS disconnect status sync skipped: socket=${client.id} tenant=${tenantId ?? 'n/a'} no_device_ids`,
+      );
     }
 
     this.logger.debug(`Client disconnected: ${client.id}`);
