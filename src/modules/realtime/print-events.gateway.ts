@@ -15,6 +15,7 @@ import { AuthTokenPayload } from '../../common/auth/auth.types';
 import { TokenRevocationService } from '../../common/auth/token-revocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, $Enums } from '../../../generated/prisma/client.js';
+import { RedisService } from '../redis/redis.service';
 
 type SubscriptionPayload = {
   tenantId?: string;
@@ -78,6 +79,7 @@ export class PrintEventsGateway
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly tokenRevocationService: TokenRevocationService,
+    private readonly redis: RedisService,
   ) {}
 
   private emitToRooms(
@@ -166,7 +168,7 @@ export class PrintEventsGateway
         client.disconnect(true);
         return;
       }
-      if (this.tokenRevocationService.isRevoked(payload.jti)) {
+      if (await this.tokenRevocationService.isRevokedAsync(payload.jti)) {
         this.logger.warn(`Socket ${client.id} rejected: revoked token`);
         client.disconnect(true);
         return;
@@ -262,6 +264,10 @@ export class PrintEventsGateway
           this.logger.debug(
             `WS disconnect status sync: socket=${client.id} tenant=${tenantId} offlineCandidates=${offlineDeviceIds.join(',')} updated=${result.count}`,
           );
+
+          if (result.count > 0) {
+            await this.redis.del(`cache:public:devices:tenant:${tenantId}`);
+          }
         } catch (error) {
           this.logger.error(
             `Failed to mark devices offline on disconnect for socket ${client.id}`,
@@ -456,6 +462,8 @@ export class PrintEventsGateway
     };
 
     this.server.to(client.id).emit('print.device.presented', presentedPayload);
+
+    await this.redis.del(`cache:public:devices:tenant:${auth.tenantId}`);
 
     return presentedPayload;
   }

@@ -1,123 +1,35 @@
 # 02 - Flujo End-to-End
 
-## Resumen del flujo
+## A) Onboarding de Cliente Impresora
 
-1. Cliente de negocio crea un print job por HTTP.
-2. Servicio persiste el job con estado inicial.
-3. Operacion de dispatch envia evento WS al room de la impresora.
-4. Cliente impresor responde ACK.
-5. Cliente impresor reporta resultado final.
-6. Servicio actualiza estado final y persiste log.
-7. Endpoint monitor expone estado agregado y anomalias.
+1. Cliente solicita activacion (`/api/auth/device/activation/request`).
+2. Admin consulta pendientes (`/api/auth/device/activation/pending`).
+3. Admin aprueba (`/api/auth/device/activation/approve`).
+4. Cliente intercambia credencial (`/api/auth/device/token`).
+5. Cliente usa access token en WS `/print`.
 
-## Flujo detallado
+## B) Presencia y Disponibilidad
 
-### Paso 1: Creacion de trabajo
+1. Cliente emite `print.device.present`.
+2. Backend actualiza estado `online` y devuelve `print.device.presented`.
+3. Al desconectar, backend actualiza `offline` si ya no hay otro socket activo para ese device.
 
-- Endpoint: POST /api/print-jobs
-- Validaciones clave:
-  - tenantId requerido
-  - documentType requerido
-  - format requerido (enum)
-  - payload requerido (JSON)
-- Idempotencia en create:
-  - por requestId
-  - por externalId
-  - por contentHash en estados activos
+## C) Impresion Publica
 
-Salida:
+1. Emisor consulta `GET /api/public/print/devices?tenantSlug=...`.
+2. Emisor envia `POST /api/public/print/submit`.
+3. Backend crea `print_job` y despacha a WS (`print.job.dispatch`).
+4. Cliente impresora responde `print.job.ack` y `print.job.result`.
 
-- Se crea registro en print_jobs
-- Se emite print.job.created
+## D) Sesion de Dispositivo
 
-### Paso 2: Dispatch
+1. Refresh periodico con `POST /api/auth/device/refresh`.
+2. Logout con `POST /api/auth/device/logout`.
+3. Revocacion forzada por admin con `POST /api/auth/device/credential/revoke`.
 
-- Endpoint: POST /api/print-jobs/:id/dispatch
-- Reglas:
-  - si no existe: 404
-  - si estado ya es sent/processing/printed: no redispara
-  - si no tiene printerId: 400
+## E) Redis en el Flujo
 
-Acciones:
-
-- estado -> sent
-- sentAt -> now
-- attempts += 1
-- crea log sent_to_printer
-- emite print.job.dispatch al room device:{printerId}
-- emite print.job.updated
-- programa timeout de ACK
-
-### Paso 3: ACK del cliente impresor
-
-- Evento de entrada: print.job.ack
-- Reglas:
-  - job debe existir
-  - tenant debe coincidir
-  - estado actual debe ser sent
-
-Acciones:
-
-- estado -> processing
-- processingAt -> now
-- log event -> validated
-- emite print.job.updated y print.job.log.created
-
-### Paso 4: Resultado del cliente impresor
-
-- Evento de entrada: print.job.result
-- Reglas:
-  - job debe existir
-  - tenant debe coincidir
-  - evita duplicados
-  - no permite transicion invalida
-  - estados permitidos para result: sent, processing, retrying
-
-Acciones:
-
-- success|warning -> estado printed
-- error -> estado failed
-- processedAt -> now
-- en error guarda lastErrorCode/errorMessage
-- crea log printed o failed
-- emite print.job.updated y print.job.log.created
-
-### Paso 5: Timeout de ACK
-
-Si no llega ACK a tiempo:
-
-- para estado sent:
-  - si aun puede reintentar -> estado retrying
-  - si no -> estado failed + processedAt + error ACK_TIMEOUT
-- crea log de timeout
-- emite print.job.updated y print.job.log.created
-
-## Estados de trabajo
-
-Estados principales:
-
-- queued
-- routing
-- processing
-- sent
-- printed
-- failed
-- cancelled
-- retrying
-
-## Diagrama simplificado
-
-```mermaid
-stateDiagram-v2
-  [*] --> queued
-  queued --> sent: dispatch
-  sent --> processing: print.job.ack
-  sent --> retrying: ack timeout con retry
-  sent --> failed: ack timeout sin retry
-  processing --> printed: print.job.result success/warning
-  processing --> failed: print.job.result error
-  retrying --> sent: nuevo dispatch
-  queued --> cancelled
-  sent --> cancelled
-  processing --> cancelled
-```
+1. Cache publico tenant/devices para lecturas frecuentes.
+2. Invalidacion en present/disconnect/CRUD de dispositivos.
+3. Revocacion de JWT distribuida.
+4. Rate-limit de activaciones.

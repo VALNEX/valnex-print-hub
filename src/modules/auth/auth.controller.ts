@@ -1,13 +1,21 @@
 import {
   Body,
   Controller,
+  Get,
   Headers,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { buildSuccessResponse } from '../../common/http/api-response.dto';
@@ -16,10 +24,15 @@ import { CurrentAuth } from '../../common/auth/current-auth.decorator';
 import type { AuthTokenPayload } from '../../common/auth/auth.types';
 import { RequireScopes } from '../../common/auth/required-scope.decorator';
 import { AuthService } from './auth.service';
-import { PrinterLoginDto } from './dto/printer-login.dto';
 import { AdminRegisterDto } from './dto/admin-register.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AuthLoginDto } from './dto/auth-login.dto';
+import { DeviceActivationRequestDto } from './dto/device-activation-request.dto';
+import { DeviceActivationApproveDto } from './dto/device-activation-approve.dto';
+import { DeviceTokenExchangeDto } from './dto/device-token-exchange.dto';
+import { DeviceTokenRefreshDto } from './dto/device-token-refresh.dto';
+import { DeviceLogoutDto } from './dto/device-logout.dto';
+import { DeviceCredentialRevokeDto } from './dto/device-credential-revoke.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -65,8 +78,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @ApiOperation({
-    summary:
-      'Unified login: identifies if credentials belong to admin user or tenant',
+    summary: 'Unified login: admin credentials only',
   })
   @ApiBody({ type: AuthLoginDto })
   async login(
@@ -113,34 +125,144 @@ export class AuthController {
   }
 
   @Public()
-  @Post('printer/login')
-  @ApiOperation({ summary: 'Login for printer client (.NET/WPF)' })
-  @ApiBody({ type: PrinterLoginDto })
+  @Post('device/activation/request')
+  @ApiOperation({ summary: 'Request one-time activation code for a device' })
+  @ApiBody({ type: DeviceActivationRequestDto })
+  async requestDeviceActivation(
+    @Body() dto: DeviceActivationRequestDto,
+    @Req() req: Request,
+  ) {
+    const data = await this.authService.requestDeviceActivation(dto, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    });
+    return buildSuccessResponse(req.path, 'Device activation request created', data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('device/activation/approve')
+  @RequireScopes('admin')
+  @ApiOperation({ summary: 'Approve a pending device activation request' })
+  @ApiBody({ type: DeviceActivationApproveDto })
+  async approveDeviceActivation(
+    @Body() dto: DeviceActivationApproveDto,
+    @CurrentAuth() auth: AuthTokenPayload,
+    @Req() req: Request,
+  ) {
+    const data = await this.authService.approveDeviceActivation(dto, auth);
+    return buildSuccessResponse(req.path, 'Device activation approved', data);
+  }
+
+  @Public()
+  @Post('device/token')
+  @ApiOperation({ summary: 'Exchange device credential for access and refresh tokens' })
+  @ApiBody({ type: DeviceTokenExchangeDto })
+  async exchangeDeviceToken(
+    @Body() dto: DeviceTokenExchangeDto,
+    @Req() req: Request,
+  ) {
+    const data = await this.authService.exchangeDeviceToken(dto, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    });
+    return buildSuccessResponse(req.path, 'Device token issued successfully', data);
+  }
+
+  @Public()
+  @Post('device/refresh')
+  @ApiOperation({ summary: 'Refresh device access token using refresh token' })
+  @ApiBody({ type: DeviceTokenRefreshDto })
+  async refreshDeviceToken(
+    @Body() dto: DeviceTokenRefreshDto,
+    @Req() req: Request,
+  ) {
+    const data = await this.authService.refreshDeviceToken(dto, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    });
+    return buildSuccessResponse(req.path, 'Device token refreshed successfully', data);
+  }
+
+  @Public()
+  @Post('device/logout')
+  @ApiOperation({ summary: 'Revoke a device refresh session' })
+  @ApiBody({ type: DeviceLogoutDto })
+  async logoutDevice(
+    @Body() dto: DeviceLogoutDto,
+    @Req() req: Request,
+  ) {
+    const data = await this.authService.logoutDevice(dto);
+    return buildSuccessResponse(req.path, 'Device logout processed', data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('device/credential/revoke')
+  @RequireScopes('admin')
+  @ApiOperation({ summary: 'Revoke a device credential and all active sessions' })
+  @ApiBody({ type: DeviceCredentialRevokeDto })
+  async revokeDeviceCredential(
+    @Body() dto: DeviceCredentialRevokeDto,
+    @Req() req: Request,
+  ) {
+    const data = await this.authService.revokeDeviceCredential(dto);
+    return buildSuccessResponse(req.path, 'Device credential revoked', data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('device/activation/pending')
+  @RequireScopes('admin')
+  @ApiOperation({ summary: 'List pending device activation requests' })
+  @ApiQuery({ name: 'tenantSlug', required: false, example: 'valnex' })
+  @ApiQuery({ name: 'limit', required: false, example: 50 })
   @ApiOkResponse({
-    description: 'Printer login succeeded',
+    description: 'Pending device activations list',
     schema: {
       example: {
         success: true,
-        message: 'Printer login successful',
+        message: 'Pending device activations retrieved successfully',
         data: {
-          tokenType: 'Bearer',
-          accessToken: '<jwt>',
-          expiresAt: '2026-03-14T08:00:00.000Z',
-          tenantId: 'a1f4f8fe-1111-4444-8888-0f9b4d4c1a11',
-          tenantSlug: 'tenant-slug',
-          ws: {
-            namespace: '/print',
-            auth: {
-              token: '<jwt>',
+          count: 1,
+          items: [
+            {
+              id: '11111111-2222-3333-4444-555555555555',
+              status: 'pending',
+              expiresAt: '2026-03-18T20:20:00.000Z',
+              createdAt: '2026-03-18T20:10:00.000Z',
+              requestedIdentifier: 'WPF-FRONT-01',
+              requestedMacAddress: 'aa:bb:cc:dd:ee:ff',
+              requestedName: 'Front Desk Printer',
+              tenant: {
+                id: 'a1f4f8fe-1111-4444-8888-0f9b4d4c1a11',
+                slug: 'valnex',
+                name: 'Valnex',
+              },
+              device: {
+                id: '22222222-3333-4444-5555-666666666666',
+                code: 'front-desk-a1b2c3d4',
+                name: 'Front Desk Printer',
+                status: 'unknown',
+              },
             },
-          },
+          ],
         },
       },
     },
   })
-  async printerLogin(@Body() dto: PrinterLoginDto, @Req() req: Request) {
-    const data = await this.authService.printerLogin(dto);
-    return buildSuccessResponse(req.path, 'Printer login successful', data);
+  async listPendingDeviceActivations(
+    @Query('tenantSlug') tenantSlug: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() req: Request,
+  ) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    const data = await this.authService.listPendingDeviceActivations({
+      tenantSlug,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+    return buildSuccessResponse(
+      req.path,
+      'Pending device activations retrieved successfully',
+      data,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

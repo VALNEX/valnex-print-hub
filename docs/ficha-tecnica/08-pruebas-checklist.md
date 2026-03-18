@@ -1,90 +1,34 @@
 # 08 - Pruebas y Checklist
 
-## Objetivo
+## A. Auth de Dispositivo
 
-Validar que el flujo de impresion funciona extremo a extremo con transiciones correctas y resiliencia basica.
+1. Crear activation request valido.
+2. Aprobar activation request valido.
+3. Rechazar activation code invalido.
+4. Intercambiar credencial por tokens.
+5. Refrescar token y validar rotacion refresh.
+6. Verificar que refresh viejo falle tras rotacion.
 
-## Pruebas manuales recomendadas
+## B. Seguridad
 
-### 1) Smoke API
+1. Rate-limit de activacion excedido retorna error.
+2. Token revocado no pasa guard HTTP.
+3. Token revocado no pasa handshake WS.
 
-- GET /api -> 200
-- GET /api/docs -> 200
-- GET /api/print-jobs/monitor -> 200
+## C. Estado de Dispositivo
 
-### 2) CRUD base
+1. `print.device.present` pone `online`.
+2. Disconnect WS pone `offline` si no hay otro socket activo.
+3. HTTP helper present no fuerza online por si solo.
 
-- Crear tenant
-- Crear location
-- Crear device
-- Crear source
-- Crear routing rule
+## D. Flujo de Impresion
 
-### 3) Flujo job feliz
+1. Lista publica retorna solo `online|busy`.
+2. Submit crea job y emite dispatch.
+3. ACK timeout mueve job segun configuracion de retries.
 
-1. Crear print job
-2. Dispatch
-3. Cliente WS envia ACK
-4. Cliente WS envia result success
-5. Verificar job status = printed
-6. Verificar logs (validated, printed)
+## E. Redis
 
-### 4) Flujo con error
-
-1. Crear y dispatch
-2. ACK
-3. result error con code/message
-4. Verificar status = failed
-5. Verificar lastErrorCode/errorMessage
-
-### 5) Timeout ACK
-
-1. Crear y dispatch
-2. No enviar ACK
-3. Esperar PRINT_ACK_TIMEOUT_MS
-4. Verificar retrying o failed segun attempts/maxRetries
-
-### 6) Idempotencia
-
-- Repetir create con mismo requestId
-- Repetir create con mismo externalId
-- Repetir create con mismo contentHash en estado activo
-- Verificar que no se duplique impresion
-
-### 7) Transiciones invalidas
-
-- Enviar result para job queued
-- Esperar response ignored con invalid_state_transition
-
-## Casos de regresion
-
-- Dispatch sin printerId debe devolver 400
-- ACK con tenant incorrecto debe ignored
-- Result duplicado no debe mutar estado
-
-## Checklist de salida
-
-- Build OK
-- Tests OK
-- Monitor endpoint operativo
-- Flujo WS validado con cliente real o script
-- No any y sin casts inseguros
-- Swagger alineado a enums y estados reales
-
-## Script base para cliente WS (pseudo)
-
-```text
-connect('/print')
-emit('subscribe', { tenantId, deviceId })
-on('print.job.dispatch', (job) => {
-  emit('print.job.ack', { jobId: job.id, tenantId, deviceId })
-  // imprimir fisicamente
-  emit('print.job.result', {
-    jobId: job.id,
-    tenantId,
-    deviceId,
-    status: 'success',
-    message: 'printed'
-  })
-})
-```
+1. Cache tenant/devices se llena y expira por TTL.
+2. Invalida cache en cambios de device/presencia.
+3. Revocacion distribuida funciona en multiples instancias.

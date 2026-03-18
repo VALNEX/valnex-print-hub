@@ -1,114 +1,32 @@
-# 05 - Modelo de Datos (Prisma)
+# 05 - Modelo de Datos
 
-## Schemas PostgreSQL
+## Dominios Principales
 
-- platform
-- catalog
-- ops
+1. Plataforma: tenant, admin y seguridad de dispositivo.
+2. Catalogo: locations, devices, sources.
+3. Operacion: routing rules, jobs, logs.
 
-## Entidades principales
+## Entidades Clave de Seguridad de Dispositivo
 
-### Tenant (platform.tenants)
+1. `DeviceActivationRequest`
+2. `DeviceCredential`
+3. `DeviceSession`
 
-Define el contexto multi-tenant.
+## Entidades Clave de Impresion
 
-Campos clave:
+1. `PrintDevice`
+2. `PrintRoutingRule`
+3. `PrintJob`
+4. `PrintJobLog`
 
-- id
-- name
-- slug
-- status
-- metadata/settings
+## Relaciones Relevantes
 
-### PrintLocation (catalog.print_locations)
+1. Tenant 1:N PrintDevice.
+2. PrintDevice 1:N DeviceCredential.
+3. DeviceCredential 1:N DeviceSession.
+4. PrintJob 1:N PrintJobLog.
 
-Ubicaciones de impresion por tenant.
+## Consideraciones
 
-Campos clave:
-
-- tenantId
-- name
-- code
-- status
-
-### PrintDevice (catalog.print_devices)
-
-Impresoras y sus capacidades.
-
-Campos clave:
-
-- tenantId
-- locationId
-- type
-- connectionType
-- identifier
-- status
-
-### PrintSource (catalog.print_sources)
-
-Origen funcional que solicita impresion.
-
-### PrintRoutingRule (ops.print_routing_rules)
-
-Reglas de enrutamiento por documento y contexto.
-
-Campos clave:
-
-- tenantId
-- sourceId/locationId opcionales
-- printerId
-- documentType
-- format opcional
-- priority
-- isActive
-
-### PrintJob (ops.print_jobs)
-
-Trabajo de impresion, centro del flujo.
-
-Campos clave:
-
-- tenantId
-- printerId/locationId/sourceId
-- documentType
-- format
-- status
-- payload/renderedPayload
-- attempts/maxRetries
-- errores y timestamps del ciclo de vida
-
-Restricciones relevantes:
-
-- unique (tenantId, externalId)
-- unique (tenantId, requestId)
-
-### PrintJobLog (ops.print_job_logs)
-
-Bitacora de eventos por job.
-
-Campos clave:
-
-- tenantId
-- jobId
-- event
-- level
-- message
-- errorCode
-- context
-
-## Enums mas usados
-
-- RecordStatus
-- PrintDeviceType
-- PrintConnectionType
-- PrintDeviceStatus
-- PrintJobFormat
-- PrintJobPriority
-- PrintJobStatus
-- PrintLogEvent
-
-## Relaciones
-
-- Tenant 1:N con locations, devices, sources, routingRules, jobs, jobLogs
-- PrintJob N:1 con tenant y opcionalmente con location/printer/source
-- PrintJobLog N:1 con PrintJob
+1. Se usa hash para activationCode, credentialSecret y refreshToken.
+2. Estados de dispositivo dependen de presencia WS operativa.

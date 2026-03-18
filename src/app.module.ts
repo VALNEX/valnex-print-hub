@@ -11,9 +11,11 @@ import { PrintRoutingRulesModule } from './modules/print-routing-rules/print-rou
 import { PrintJobsModule } from './modules/print-jobs/print-jobs.module';
 import { PrintJobLogsModule } from './modules/print-job-logs/print-job-logs.module';
 import { PublicPrintModule } from './modules/public-print/public-print.module';
+import { RedisModule } from './modules/redis/redis.module';
 
 @Module({
   imports: [
+    RedisModule,
     AuthModule,
     PrismaModule,
     TenantsModule,
