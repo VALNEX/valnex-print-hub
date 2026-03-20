@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { TokenRevocationService } from '../../common/auth/token-revocation.service';
+import { DeviceAuthCacheService } from './device-auth-cache.service';
 
 @Global()
 @Module({
@@ -24,7 +25,7 @@ import { TokenRevocationService } from '../../common/auth/token-revocation.servi
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, TokenRevocationService],
-  exports: [AuthService, TokenRevocationService, JwtModule],
+  providers: [AuthService, TokenRevocationService, DeviceAuthCacheService],
+  exports: [AuthService, TokenRevocationService, DeviceAuthCacheService, JwtModule],
 })
 export class AuthModule {}
