@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBody,
+  ApiExcludeEndpoint,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -77,6 +78,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @ApiExcludeEndpoint()
   @ApiOperation({
     summary: 'Unified login: admin credentials only',
   })
@@ -267,6 +269,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('printer/logout')
+  @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Logout and revoke printer token' })
   @RequireScopes('printer-client')
   async printerLogout(
