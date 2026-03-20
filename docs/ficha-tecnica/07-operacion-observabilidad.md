@@ -1,84 +1,26 @@
 # 07 - Operacion y Observabilidad
 
-## Variables de entorno
+## Indicadores Operativos
 
-Minimas:
+1. Jobs por estado (`queued`, `sent`, `processing`, `printed`, `failed`).
+2. Devices online/offline por tenant.
+3. Activaciones pendientes/expiradas/aprobadas.
 
-- DATABASE_URL
-- PORT
+## Logs Clave
 
-Opcionales del flujo:
+1. Conexiones y desconexiones WS por socket/device.
+2. Eventos de dispatch/ack/result de jobs.
+3. Revocaciones de token/credencial.
+4. Rate-limit de activacion disparado.
 
-- PRINT_ACK_TIMEOUT_MS (default 15000)
-- PRINT_MONITOR_STALE_MS (default 60000)
+## Redis - Operacion
 
-## Arranque
+1. Verificar conectividad y latencia de Redis.
+2. Monitorear hit ratio de cache publico (`tenant`, `devices`).
+3. Monitorear claves de seguridad (`auth:revoked:*`, `auth:device:*`).
 
-```bash
-pnpm install
-pnpm build
-pnpm run start
-```
+## Runbook Basico
 
-## Endpoints operativos
-
-- GET /api
-- GET /api/docs
-- GET /api/print-jobs/monitor
-
-## Uso de monitor
-
-Respuesta incluye:
-
-- staleMs
-- summary por estado
-- staleInFlight (sent/processing estancados)
-- recentFailures
-
-## Observabilidad recomendada
-
-- Correlacionar logs por jobId y tenantId
-- Medir latencias:
-  - create -> dispatch
-  - dispatch -> ack
-  - ack -> result
-- Alertas:
-  - growth de failed
-  - growth de retrying
-  - staleInFlight > umbral
-
-## Troubleshooting
-
-### Puerto ocupado (EADDRINUSE)
-
-En Windows:
-
-```powershell
-Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue |
-  Select-Object -ExpandProperty OwningProcess -Unique |
-  ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
-```
-
-### Verificar API
-
-```powershell
-try {
-  $r = Invoke-WebRequest -Uri 'http://localhost:3001/api' -Method GET -TimeoutSec 8
-  "STATUS=$($r.StatusCode)"
-} catch {
-  "ERROR=$($_.Exception.Message)"
-}
-```
-
-### Verificar docs
-
-```powershell
-Invoke-WebRequest -Uri 'http://localhost:3001/api/docs' -Method GET
-```
-
-## Plan de evolucion operativa
-
-- healthcheck dedicado con estado DB y gateway
-- metricas Prometheus/OpenTelemetry
-- dashboard por tenant/dispositivo
-- trazabilidad distribuida de evento a evento
+1. Si dispositivos no aparecen online: validar `print.device.present` y logs WS.
+2. Si token aparentemente valido falla: verificar revocacion distribuida en Redis.
+3. Si lista publica esta desactualizada: validar invalidaciones de cache por tenant.

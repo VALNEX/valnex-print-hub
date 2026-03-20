@@ -1,112 +1,38 @@
-# Referencia tecnica de Prisma
+# Referencia Prisma
 
-## Schemas PostgreSQL configurados
+## Esquemas
 
-- platform
-- catalog
-- ops
+- `platform`: tenants, admin users, activaciones y sesiones de dispositivo.
+- `catalog`: ubicaciones, dispositivos y fuentes de impresion.
+- `ops`: reglas de ruteo, jobs y logs.
 
-## Enums y valores reales
+## Modelos Relevantes Nuevos
 
-### RecordStatus (platform)
+1. `DeviceActivationRequest`
+- solicitud de activacion con codigo one-time hash y vencimiento.
 
-- active
-- inactive
-- suspended
-- deleted
+2. `DeviceCredential`
+- credencial unica por dispositivo (hash del secreto, estado, revocacion).
 
-### PrintDeviceType (catalog)
+3. `DeviceSession`
+- sesion de refresh token por dispositivo con revocacion.
 
-- thermal
-- label
-- laser
-- inkjet
-- dot_matrix
-- mobile
-- virtual
-- other
+## Reglas de Implementacion
 
-### PrintConnectionType (catalog)
+1. Nunca persistir secretos en claro.
+2. Persistir hashes (`sha256 + pepper`) de activation code y device secret.
+3. Rotar refresh token en cada refresh.
+4. Revocar sesiones al revocar credencial.
 
-- network
-- bluetooth
-- usb
-- serial
-- bridge
-- cloud
-- spooler
-- other
+## Flujo Prisma Recomendado
 
-### PrintDeviceStatus (catalog)
+1. `request activation`: `find/create printDevice` -> `create deviceActivationRequest`.
+2. `approve activation`: `expire/revoke anteriores` -> `create deviceCredential` -> `approve request`.
+3. `token exchange`: validar hash credencial -> `create deviceSession`.
+4. `refresh`: validar sesion -> rotar hash refresh en misma sesion.
 
-- online
-- offline
-- busy
-- error
-- paused
-- unknown
+## Migraciones
 
-### PrintJobFormat (ops)
-
-- text
-- escpos
-- pdf
-- image
-- zpl
-- raw
-- html
-- qrcode
-- barcode
-
-### PrintJobPriority (ops)
-
-- low
-- normal
-- high
-- critical
-
-### PrintJobStatus (ops)
-
-- queued
-- routing
-- processing
-- sent
-- printed
-- failed
-- cancelled
-- retrying
-
-### PrintLogEvent (ops)
-
-- received
-- validated
-- rejected
-- queued
-- routing_resolved
-- routing_failed
-- assigned_printer
-- sent_to_queue
-- sent_to_bridge
-- sent_to_printer
-- printed
-- failed
-- retried
-- cancelled
-
-## Modelos por schema
-
-### platform
-
-- Tenant -> tenants
-
-### catalog
-
-- PrintLocation -> print_locations
-- PrintDevice -> print_devices
-- PrintSource -> print_sources
-
-### ops
-
-- PrintRoutingRule -> print_routing_rules
-- PrintJob -> print_jobs
-- PrintJobLog -> print_job_logs
+1. `pnpm prisma migrate dev --name <descripcion>`
+2. `pnpm prisma migrate deploy` (produccion)
+3. `pnpm prisma generate`

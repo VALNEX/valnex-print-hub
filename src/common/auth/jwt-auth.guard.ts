@@ -50,7 +50,7 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload = await this.jwtService.verifyAsync<AuthTokenPayload>(token);
-      if (this.tokenRevocationService.isRevoked(payload.jti)) {
+      if (await this.tokenRevocationService.isRevokedAsync(payload.jti)) {
         throw new UnauthorizedException('Token revoked');
       }
       if (requiredScopes?.length && !requiredScopes.includes(payload.scope)) {

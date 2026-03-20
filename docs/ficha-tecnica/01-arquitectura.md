@@ -1,68 +1,36 @@
 # 01 - Arquitectura
 
-## Vista general
+## Vision General
 
-El sistema es una API NestJS modular que administra entidades de impresion y ejecuta el ciclo de vida de trabajos de impresion en tiempo real por WebSocket.
+Valnex Print Hub es un backend NestJS multi-tenant con Prisma/PostgreSQL, WebSocket para tiempo real y Redis para cache/seguridad transitoria.
 
 ## Capas
 
-- src/main.ts
-  - bootstrap
-  - prefijo global /api
-  - ValidationPipe global
-  - Swagger en /api/docs
-- src/modules/prisma
-  - PrismaService global
-  - una sola instancia de PrismaClient
-- src/modules/*
-  - modulos funcionales por dominio
-- src/modules/realtime
-  - PrintEventsGateway para eventos Socket.IO
+1. `modules/auth`: autenticacion admin y autenticacion de dispositivos por activacion.
+2. `modules/realtime`: namespace WS `/print` para presencia y eventos de job.
+3. `modules/public-print`: endpoints publicos para listar impresoras y enviar jobs.
+4. `modules/print-*`: catalogo y operacion de impresion.
+5. `modules/redis`: cliente Redis global reusable.
+6. `modules/prisma`: acceso unico a base de datos.
 
-## Modulos funcionales
+## Patron de Autenticacion de Dispositivo
 
-- tenants
-- print-locations
-- print-devices
-- print-sources
-- print-routing-rules
-- print-jobs
-- print-job-logs
+1. Activacion de dispositivo con codigo de un solo uso.
+2. Aprobacion admin de solicitud pendiente.
+3. Emision de credencial por dispositivo.
+4. Intercambio por access+refresh tokens.
+5. Rotacion de refresh y revocacion granular.
 
-Cada modulo sigue patron controller + service + dto.
+## Redis en Arquitectura
 
-## Integracion de datos
+1. Cache de tenant por slug.
+2. Cache de lista publica de dispositivos por tenant.
+3. Revocacion distribuida de JWT (`jti`).
+4. Rate-limit de activaciones.
+5. Cache de refresh token hash -> session id.
 
-- Prisma usa adapter PrismaPg con DATABASE_URL
-- PrismaClient se conecta en onModuleInit y desconecta en onModuleDestroy
-- Base de datos organizada por schemas:
-  - platform (tenant y enum base)
-  - catalog (catalogo de dispositivos, ubicaciones, fuentes)
-  - ops (trabajos, logs, reglas)
+## Estado de Dispositivos
 
-## Integracion en tiempo real
-
-Gateway en namespace /print:
-
-- Suscripcion de clientes a rooms:
-  - tenant:{tenantId}
-  - device:{deviceId}
-  - job:{jobId}
-- Eventos de salida de servidor:
-  - print.job.created
-  - print.job.updated
-  - print.job.log.created
-  - print.job.dispatch
-- Eventos de entrada al servidor:
-  - subscribe
-  - print.job.ack
-  - print.job.result
-
-## Principios de diseno aplicados
-
-- Modularidad por bounded context
-- Encapsulamiento de acceso a DB en servicios
-- Contratos DTO para entrada/salida
-- Estado de trabajo como fuente de verdad
-- Idempotencia para evitar doble impresion
-- Observabilidad por endpoint monitor y logs de eventos
+1. `print.device.present` (WS) actualiza `online`.
+2. Disconnect WS actualiza `offline` cuando no quedan sockets activos para ese device.
+3. `POST /print-devices/present` es helper HTTP y no publica online por si solo.

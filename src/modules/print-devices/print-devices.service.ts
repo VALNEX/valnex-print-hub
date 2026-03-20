@@ -6,10 +6,18 @@ import { UpdatePrintDeviceDto } from './dto/update-print-devices.dto';
 import { FilterPrintDeviceDto } from './dto/filter-print-devices.dto';
 import { PresentPrintDeviceDto } from './dto/present-print-device.dto';
 import { Prisma, $Enums } from '../../../generated/prisma/client.js';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class PrintDevicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
+
+  private async invalidatePublicDevicesCache(tenantId: string): Promise<void> {
+    await this.redis.del(`cache:public:devices:tenant:${tenantId}`);
+  }
 
   private normalizeCode(source: string): string {
     return source
@@ -46,6 +54,9 @@ export class PrintDevicesService {
     const data: Prisma.PrintDeviceUncheckedCreateInput = { ...dto };
     return this.prisma.client.printDevice.create({
       data,
+    }).then(async (device) => {
+      await this.invalidatePublicDevicesCache(device.tenantId);
+      return device;
     });
   }
 
@@ -145,6 +156,9 @@ export class PrintDevicesService {
     return this.prisma.client.printDevice.update({
       where: { id },
       data,
+    }).then(async (device) => {
+      await this.invalidatePublicDevicesCache(device.tenantId);
+      return device;
     });
   }
 
@@ -161,6 +175,9 @@ export class PrintDevicesService {
     return this.prisma.client.printDevice.update({
       where: { id: current.id },
       data: { name },
+    }).then(async (device) => {
+      await this.invalidatePublicDevicesCache(device.tenantId);
+      return device;
     });
   }
 
@@ -251,6 +268,8 @@ export class PrintDevicesService {
       },
     });
 
+    await this.invalidatePublicDevicesCache(tenantId);
+
     return {
       event: 'print.device.present.ok',
       tenantId,
@@ -277,11 +296,19 @@ export class PrintDevicesService {
     return this.prisma.client.printDevice.update({
       where: { id: current.id },
       data,
+    }).then(async (device) => {
+      await this.invalidatePublicDevicesCache(device.tenantId);
+      return device;
     });
   }
 
   remove(id: string) {
-    return this.prisma.client.printDevice.delete({ where: { id } });
+    return this.prisma.client.printDevice.delete({ where: { id } }).then(
+      async (device) => {
+        await this.invalidatePublicDevicesCache(device.tenantId);
+        return device;
+      },
+    );
   }
 
   async removeForTenant(id: string, tenantId: string) {
@@ -294,6 +321,11 @@ export class PrintDevicesService {
       throw new NotFoundException(`Print device ${id} not found`);
     }
 
-    return this.prisma.client.printDevice.delete({ where: { id: current.id } });
+    return this.prisma.client.printDevice.delete({ where: { id: current.id } }).then(
+      async (device) => {
+        await this.invalidatePublicDevicesCache(device.tenantId);
+        return device;
+      },
+    );
   }
 }

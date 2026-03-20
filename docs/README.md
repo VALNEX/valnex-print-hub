@@ -1,14 +1,19 @@
-# Documentacion de Base de Datos
+# Documentacion del Proyecto
 
-Esta carpeta contiene la documentacion funcional y operativa de la base de datos del sistema de impresion multi-tenant.
+Este directorio concentra la documentacion tecnica y operativa de Valnex Print Hub.
 
 ## Estructura
 
-- [Diccionario de tablas](database/table-dictionary.md)
-- [Flujo operativo del sistema](database/operational-flow.md)
-- [Referencia tecnica de Prisma](database/prisma-reference.md)
-- [Recomendaciones de evolucion](database/future-recommendations.md)
+- `ficha-tecnica/`: arquitectura, contratos, seguridad, operacion e integraciones.
+- `database/`: referencia de modelo, tablas y lineamientos de evolucion.
 
-## Contexto
+## Puntos Clave Actuales
 
-El sistema esta orientado a un modelo multi-tenant para gestionar solicitudes de impresion provenientes de varios modulos (yard, billing, maintenance, bascula, inventario), con enrutamiento dinamico por reglas y trazabilidad completa por job.
+1. El flujo de autenticacion para clientes de impresora fue reemplazado por `device provisioning` con activacion de un solo uso.
+2. Redis se usa para cache de lectura publica y para seguridad/sesion distribuida.
+3. La presencia WS define disponibilidad online/offline en dispositivos de impresion.
+
+## Indice Principal
+
+- Ver `ficha-tecnica/README.md`
+- Ver `database/prisma-reference.md`

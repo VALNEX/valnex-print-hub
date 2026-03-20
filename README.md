@@ -1,103 +1,189 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Valnex Print Hub
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend multi-tenant para orquestacion de impresion en tiempo real.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Construido con NestJS + Prisma + PostgreSQL + Socket.IO + Redis.
 
-## Description
+## Que Resuelve
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+1. Registro y administracion de dispositivos de impresion por tenant.
+2. Enrutamiento y despacho de jobs de impresion.
+3. Canal en tiempo real para ACK/RESULT de cliente impresora.
+4. Flujo seguro de onboarding de cliente impresora con activacion one-time.
+5. Observabilidad operativa de estado de jobs y dispositivos.
 
-## Technical Documentation
+## Stack Tecnico
 
-- Full technical sheet (architecture, flow, security, contracts, operations): [docs/ficha-tecnica/README.md](docs/ficha-tecnica/README.md)
+1. NestJS 11
+2. Prisma 7
+3. PostgreSQL
+4. Socket.IO
+5. Redis (`ioredis`)
+6. PNPM
 
-## Project setup
+## Estado Actual del Auth
 
-```bash
-$ pnpm install
+El flujo de cliente impresora fue migrado a `device provisioning`:
+
+1. `POST /api/auth/device/activation/request`
+2. `GET /api/auth/device/activation/pending` (admin)
+3. `POST /api/auth/device/activation/approve` (admin)
+4. `POST /api/auth/device/token`
+5. `POST /api/auth/device/refresh`
+6. `POST /api/auth/device/logout`
+7. `POST /api/auth/device/credential/revoke` (admin)
+
+Notas:
+
+1. El login admin sigue vigente (`/api/auth/admin/login`).
+2. El onboarding de dispositivo reemplaza el login heredado por apiKey de tenant para clientes impresora.
+
+## Estructura del Proyecto
+
+```text
+src/
+  common/
+  config/
+  infra/
+  modules/
+    auth/
+    prisma/
+    redis/
+    realtime/
+    public-print/
+    print-devices/
+    print-jobs/
+    print-job-logs/
+    print-locations/
+    print-routing-rules/
+    print-sources/
+    tenants/
+prisma/
+  schema.prisma
+  migrations/
+docs/
+  ficha-tecnica/
+  database/
 ```
 
-## Compile and run the project
+## Requisitos
 
-```bash
-# development
-$ pnpm run start
+1. Node.js 22+
+2. PNPM 10+
+3. PostgreSQL accesible
+4. Redis accesible
 
-# watch mode
-$ pnpm run start:dev
+## Configuracion de Entorno
 
-# production mode
-$ pnpm run start:prod
+Variables minimas recomendadas:
+
+```env
+DATABASE_URL=postgresql://user:password@host:5432/valnex_print_hub
+PORT=3000
+NODE_ENV=development
+
+JWT_SECRET=change-me
+JWT_EXPIRES_IN_SECONDS=28800
+ADMIN_BOOTSTRAP_TOKEN=change-me-bootstrap
+
+DEVICE_SECRET_PEPPER=change-me-pepper
+DEVICE_ACTIVATION_TTL_MINUTES=10
+DEVICE_REFRESH_TTL_DAYS=30
+DEVICE_ACTIVATION_RATE_WINDOW_SECONDS=600
+DEVICE_ACTIVATION_RATE_MAX_ATTEMPTS=10
+
+REDIS_URL=redis://:password@127.0.0.1:6379/0
+# Alternativa sin REDIS_URL:
+# REDIS_HOST=127.0.0.1
+# REDIS_PORT=6379
+# REDIS_PASSWORD=password
 ```
 
-## Run tests
+## Instalacion y Arranque Local
+
+1. Instalar dependencias
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm install
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+2. Aplicar migraciones y generar cliente Prisma
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm prisma migrate dev
+pnpm prisma generate
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+3. Arrancar en desarrollo
 
-## Resources
+```bash
+pnpm run start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+4. Swagger
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+`http://localhost:3000/api/docs`
 
-## Support
+## Comandos Principales
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+pnpm run build
+pnpm run start
+pnpm run start:dev
+pnpm run start:prod
 
-## Stay in touch
+pnpm run test
+pnpm run test:e2e
+pnpm run test:cov
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+pnpm prisma generate
+pnpm prisma migrate dev --name <migration_name>
+pnpm prisma migrate deploy
+```
 
-## License
+## Redis: Donde Se Usa
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-# valnex-print-hub
+1. Cache tenant por slug.
+2. Cache de lista publica de dispositivos por tenant.
+3. Invalidez distribuida de JWT revocados (`jti`).
+4. Rate limit de activacion de dispositivo.
+5. Cache de sesiones de refresh token (hash -> session id).
+
+## Comportamiento de Estado de Dispositivo
+
+1. Evento WS `print.device.present` -> `online`.
+2. Desconexion WS (si no hay otro socket activo para el mismo device) -> `offline`.
+3. Endpoint helper HTTP `POST /api/print-devices/present` no publica por si solo en online operativo.
+
+## Docker
+
+### Build
+
+```bash
+docker build -t valnex-print-hub .
+```
+
+### Run
+
+```bash
+docker run --name valnex-print-hub --rm -p 3000:3000 --env-file .env valnex-print-hub
+```
+
+Si la base de datos esta en tu host local (Windows/Mac Docker Desktop), usar `host.docker.internal` en `DATABASE_URL`.
+
+## Flujo Rapido de Activacion de Device (E2E)
+
+1. Cliente solicita activacion.
+2. Admin lista pendientes y aprueba.
+3. Cliente intercambia credencial por tokens.
+4. Cliente conecta WS `/print` y emite `print.device.present`.
+5. Cliente mantiene sesion con `device/refresh` y logout/revoke cuando aplique.
+
+## Documentacion Tecnica
+
+1. Ficha tecnica completa: [docs/ficha-tecnica/README.md](docs/ficha-tecnica/README.md)
+2. Documentacion de base de datos: [docs/database/prisma-reference.md](docs/database/prisma-reference.md)
+
+## Licencia
+
+UNLICENSED (proyecto privado).
