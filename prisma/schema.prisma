@@ -123,7 +123,7 @@ enum DeviceActivationStatus {
   @@schema("platform")
 }
 
-enum DeviceCredentialStatus {
+enum DeviceApiKeyStatus {
   active
   revoked
   expired
@@ -161,7 +161,7 @@ model Tenant {
   jobs           PrintJob[]
   jobLogs        PrintJobLog[]
   deviceActivationRequests DeviceActivationRequest[]
-  deviceCredentials        DeviceCredential[]
+  deviceApiKeys            DeviceApiKey[]
   deviceSessions           DeviceSession[]
 
   @@index([status])
@@ -257,7 +257,7 @@ model PrintDevice {
   routingRules      PrintRoutingRule[]
   jobs              PrintJob[]
   activationRequests DeviceActivationRequest[]
-  credentials        DeviceCredential[]
+  apiKeys            DeviceApiKey[]
   sessions           DeviceSession[]
 
   @@unique([tenantId, code])
@@ -300,12 +300,12 @@ model DeviceActivationRequest {
   @@map("device_activation_requests")
 }
 
-model DeviceCredential {
+model DeviceApiKey {
   id               String                 @id @default(uuid()) @db.Uuid
   tenantId         String                 @db.Uuid
   deviceId         String                 @db.Uuid
   secretHash       String                 @db.VarChar(128)
-  status           DeviceCredentialStatus @default(active)
+  status           DeviceApiKeyStatus     @default(active)
   issuedAt         DateTime               @default(now())
   lastUsedAt       DateTime?
   expiresAt        DateTime?
@@ -323,14 +323,14 @@ model DeviceCredential {
   @@index([tenantId, status])
   @@index([deviceId, status])
   @@schema("platform")
-  @@map("device_credentials")
+  @@map("device_api_keys")
 }
 
 model DeviceSession {
   id               String       @id @default(uuid()) @db.Uuid
   tenantId         String       @db.Uuid
   deviceId         String       @db.Uuid
-  credentialId     String?      @db.Uuid
+  apiKeyId         String?      @db.Uuid
   refreshTokenHash String       @unique @db.VarChar(128)
   expiresAt        DateTime
   lastUsedAt       DateTime?
@@ -342,11 +342,11 @@ model DeviceSession {
 
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   device           PrintDevice      @relation(fields: [deviceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  credential       DeviceCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  apiKey           DeviceApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([tenantId])
   @@index([deviceId])
-  @@index([credentialId])
+  @@index([apiKeyId])
   @@index([tenantId, deviceId])
   @@index([expiresAt])
   @@schema("platform")

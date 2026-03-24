@@ -13,6 +13,7 @@
 9. [09-integracion-cliente-wpf.md](09-integracion-cliente-wpf.md)
 10. [10-instructivo-emisor-impresion.md](10-instructivo-emisor-impresion.md)
 11. [11-presentacion-y-resolucion-de-nombre.md](11-presentacion-y-resolucion-de-nombre.md)
+12. [12-integracion-cliente-android-http.md](12-integracion-cliente-android-http.md)
 
 ## Cambios Relevantes de esta Version
 

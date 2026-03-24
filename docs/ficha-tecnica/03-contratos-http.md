@@ -16,7 +16,7 @@ Base URL: `/api`
 4. `POST /auth/device/token`
 5. `POST /auth/device/refresh`
 6. `POST /auth/device/logout`
-7. `POST /auth/device/credential/revoke` (admin)
+7. `POST /auth/device/api-key/revoke` (admin)
 
 ### 1) Solicitar activacion de dispositivo
 
@@ -111,7 +111,6 @@ Request JSON (valido):
 
 ```json
 {
-	"activationRequestId": "11111111-2222-3333-4444-555555555555",
 	"activationCode": "Q7K9M2PJ"
 }
 ```
@@ -133,10 +132,10 @@ Response JSON (shape real):
 			"code": "front-desk-a1b2c3d4",
 			"status": "unknown"
 		},
-		"credential": {
+		"apiKey": {
 			"id": "33333333-4444-5555-6666-777777777777",
 			"status": "active",
-			"secret": "Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
+			"key": "dapi_33333333-4444-5555-6666-777777777777.Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
 		}
 	},
 	"timestamp": "2026-03-20T18:12:00.000Z",
@@ -144,7 +143,7 @@ Response JSON (shape real):
 }
 ```
 
-### 4) Intercambiar credencial por tokens
+### 4) Intercambiar API key por tokens
 
 `POST /api/auth/device/token`
 
@@ -152,8 +151,7 @@ Request JSON (valido):
 
 ```json
 {
-	"credentialId": "33333333-4444-5555-6666-777777777777",
-	"credentialSecret": "Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
+	"apiKey": "dapi_33333333-4444-5555-6666-777777777777.Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
 }
 ```
 
@@ -225,9 +223,9 @@ Response JSON (shape real):
 }
 ```
 
-### 7) Revocar credencial (admin)
+### 7) Revocar API key (admin)
 
-`POST /api/auth/device/credential/revoke`
+`POST /api/auth/device/api-key/revoke`
 
 Headers:
 
@@ -237,7 +235,7 @@ Request JSON (valido):
 
 ```json
 {
-	"credentialId": "33333333-4444-5555-6666-777777777777",
+	"apiKeyId": "33333333-4444-5555-6666-777777777777",
 	"reason": "Device reported as compromised"
 }
 ```
@@ -247,22 +245,21 @@ Response JSON (shape real):
 ```json
 {
 	"success": true,
-	"message": "Device credential revoked",
+	"message": "Device API key revoked",
 	"data": {
-		"credentialId": "33333333-4444-5555-6666-777777777777",
+		"apiKeyId": "33333333-4444-5555-6666-777777777777",
 		"revoked": true,
 		"revokedAt": "2026-03-20T18:15:00.000Z"
 	},
 	"timestamp": "2026-03-20T18:15:00.000Z",
-	"path": "/auth/device/credential/revoke"
+	"path": "/auth/device/api-key/revoke"
 }
 ```
 
 ### Validaciones de backend relevantes (DTO)
 
-1. `activationRequestId`: string de longitud 36.
-2. `activationCode`: string entre 6 y 20.
-3. `credentialSecret`: string entre 32 y 255.
+1. `activationCode`: string entre 6 y 20.
+2. `apiKey`: string entre 32 y 512.
 4. `refreshToken`: string entre 32 y 255.
 5. `tenantSlug`: maximo 100.
 6. `identifier`: minimo 3, maximo 255.

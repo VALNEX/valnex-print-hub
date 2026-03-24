@@ -39,7 +39,6 @@ Request JSON de aprobacion:
 
 ```json
 {
-	"activationRequestId": "11111111-2222-3333-4444-555555555555",
 	"activationCode": "Q7K9M2PJ"
 }
 ```
@@ -50,10 +49,10 @@ Response JSON relevante para el cliente:
 {
 	"success": true,
 	"data": {
-		"credential": {
+		"apiKey": {
 			"id": "33333333-4444-5555-6666-777777777777",
 			"status": "active",
-			"secret": "Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
+			"key": "dapi_33333333-4444-5555-6666-777777777777.Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
 		}
 	}
 }
@@ -61,8 +60,8 @@ Response JSON relevante para el cliente:
 
 El cliente recibe/captura:
 
-1. `credential.id` como `credentialId`
-2. `credential.secret` como `credentialSecret`
+1. `apiKey.id` como `apiKeyId`
+2. `apiKey.key` como `apiKey`
 
 ## Paso 3 - Obtener Tokens
 
@@ -72,8 +71,7 @@ Request JSON:
 
 ```json
 {
-	"credentialId": "33333333-4444-5555-6666-777777777777",
-	"credentialSecret": "Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
+	"apiKey": "dapi_33333333-4444-5555-6666-777777777777.Lzv0R7i8SxB9Y6mD3Qk2_8Pp1n4Ew5u7Rr0Tt2Qq9Lk"
 }
 ```
 
@@ -156,4 +154,4 @@ Response JSON esperado:
 2. Tratar `device.id` y `device.name` del backend como canonicos.
 3. No reusar refresh token viejo luego de rotacion.
 4. Manejar reconnect WS con refresh previo del access token cuando aplique.
-5. Nunca enviar `credential.secret` ni `refreshToken` a logs, telemetry o UI.
+5. Nunca enviar `apiKey` ni `refreshToken` a logs, telemetry o UI.

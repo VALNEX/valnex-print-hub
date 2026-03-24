@@ -5,11 +5,11 @@
 1. Cliente solicita activacion (`device/activation/request`).
 2. Se crea o resuelve `print_device` por tenant + mac/identifier.
 3. Se crea `device_activation_request` en estado `pending` con expiracion.
-4. Admin aprueba (`device/activation/approve`) y se genera `device_credential`.
+4. Admin aprueba (`device/activation/approve`) y se genera `device_api_key`.
 
 ## 2) Sesion de Dispositivo
 
-1. Cliente intercambia credencial por tokens (`device/token`).
+1. Cliente intercambia API key por tokens (`device/token`).
 2. Se crea `device_session` con hash de refresh token.
 3. Cliente refresca tokens (`device/refresh`) con rotacion de refresh token.
 4. En logout/revocacion se marca sesion revocada y se invalida cache Redis asociado.

@@ -33,7 +33,7 @@ import { DeviceActivationApproveDto } from './dto/device-activation-approve.dto'
 import { DeviceTokenExchangeDto } from './dto/device-token-exchange.dto';
 import { DeviceTokenRefreshDto } from './dto/device-token-refresh.dto';
 import { DeviceLogoutDto } from './dto/device-logout.dto';
-import { DeviceCredentialRevokeDto } from './dto/device-credential-revoke.dto';
+import { DeviceApiKeyRevokeDto } from './dto/device-api-key-revoke.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -157,7 +157,7 @@ export class AuthController {
 
   @Public()
   @Post('device/token')
-  @ApiOperation({ summary: 'Exchange device credential for access and refresh tokens' })
+  @ApiOperation({ summary: 'Exchange device API key for access and refresh tokens' })
   @ApiBody({ type: DeviceTokenExchangeDto })
   async exchangeDeviceToken(
     @Body() dto: DeviceTokenExchangeDto,
@@ -198,16 +198,16 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('device/credential/revoke')
+  @Post('device/api-key/revoke')
   @RequireScopes('admin')
-  @ApiOperation({ summary: 'Revoke a device credential and all active sessions' })
-  @ApiBody({ type: DeviceCredentialRevokeDto })
-  async revokeDeviceCredential(
-    @Body() dto: DeviceCredentialRevokeDto,
+  @ApiOperation({ summary: 'Revoke a device API key and all active sessions' })
+  @ApiBody({ type: DeviceApiKeyRevokeDto })
+  async revokeDeviceApiKey(
+    @Body() dto: DeviceApiKeyRevokeDto,
     @Req() req: Request,
   ) {
-    const data = await this.authService.revokeDeviceCredential(dto);
-    return buildSuccessResponse(req.path, 'Device credential revoked', data);
+    const data = await this.authService.revokeDeviceApiKey(dto);
+    return buildSuccessResponse(req.path, 'Device API key revoked', data);
   }
 
   @UseGuards(JwtAuthGuard)

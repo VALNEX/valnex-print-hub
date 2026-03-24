@@ -28,7 +28,7 @@ import { AdminRegisterDto } from './dto/admin-register.dto';
 import { AuthLoginDto } from './dto/auth-login.dto';
 import { DeviceActivationApproveDto } from './dto/device-activation-approve.dto';
 import { DeviceActivationRequestDto } from './dto/device-activation-request.dto';
-import { DeviceCredentialRevokeDto } from './dto/device-credential-revoke.dto';
+import { DeviceApiKeyRevokeDto } from './dto/device-api-key-revoke.dto';
 import { DeviceLogoutDto } from './dto/device-logout.dto';
 import { DeviceTokenExchangeDto } from './dto/device-token-exchange.dto';
 import { DeviceTokenRefreshDto } from './dto/device-token-refresh.dto';
@@ -76,6 +76,23 @@ export class AuthService {
 
   private hashSecret(value: string): string {
     return hashDeviceSecret(value, this.deviceSecretPepper);
+  }
+
+  private parseDeviceApiKey(apiKey: string): { apiKeyId: string; apiKeySecret: string } {
+    const value = apiKey.trim();
+    const [keyIdPart, keySecret] = value.split('.', 2);
+    const apiKeyId = keyIdPart.startsWith('dapi_')
+      ? keyIdPart.slice(5)
+      : keyIdPart;
+
+    if (!apiKeyId || !keySecret) {
+      throw new UnauthorizedException('Invalid device API key format');
+    }
+
+    return {
+      apiKeyId,
+      apiKeySecret: keySecret,
+    };
   }
 
   private getRefreshTtlSeconds(): number {
@@ -224,7 +241,7 @@ export class AuthService {
       tenantId: string;
       tenantSlug: string;
       deviceId: string;
-      credentialId: string;
+      apiKeyId: string;
     },
     meta?: DeviceRequestMeta,
   ) {
@@ -249,7 +266,7 @@ export class AuthService {
       data: {
         tenantId: params.tenantId,
         deviceId: params.deviceId,
-        credentialId: params.credentialId,
+        apiKeyId: params.apiKeyId,
         refreshTokenHash,
         expiresAt: refreshExpiresAt,
         ipAddress: meta?.ipAddress,
@@ -266,8 +283,8 @@ export class AuthService {
       refreshTtlSeconds,
     );
 
-    await this.prisma.client.deviceCredential.update({
-      where: { id: params.credentialId },
+    await this.prisma.client.deviceApiKey.update({
+      where: { id: params.apiKeyId },
       data: { lastUsedAt: new Date() },
     });
 
@@ -432,8 +449,15 @@ export class AuthService {
     dto: DeviceActivationApproveDto,
     adminAuth: AuthTokenPayload,
   ) {
-    const activation = await this.prisma.client.deviceActivationRequest.findFirst({
-      where: { id: dto.activationRequestId },
+    const matchingActivations = await this.prisma.client.deviceActivationRequest.findMany({
+      where: {
+        activationCodeHash: this.hashSecret(dto.activationCode.trim()),
+        status: $Enums.DeviceActivationStatus.pending,
+        expiresAt: {
+          gte: new Date(),
+        },
+      },
+      take: 2,
       include: {
         tenant: {
           select: {
@@ -453,43 +477,36 @@ export class AuthService {
       },
     });
 
+    const activation = matchingActivations[0];
+
+    if (matchingActivations.length > 1) {
+      throw new ForbiddenException('Activation code is ambiguous');
+    }
+
     if (!activation) {
-      throw new NotFoundException('Activation request not found');
-    }
-    if (activation.status !== $Enums.DeviceActivationStatus.pending) {
-      throw new ForbiddenException('Activation request is no longer pending');
-    }
-    if (activation.expiresAt.getTime() < Date.now()) {
-      await this.prisma.client.deviceActivationRequest.update({
-        where: { id: activation.id },
-        data: { status: $Enums.DeviceActivationStatus.expired },
-      });
-      throw new ForbiddenException('Activation request expired');
-    }
-    if (activation.activationCodeHash !== this.hashSecret(dto.activationCode.trim())) {
-      throw new ForbiddenException('Invalid activation code');
+      throw new NotFoundException('Activation code not found or expired');
     }
 
-    const deviceSecret = generateDeviceSecret();
+    const apiKeySecret = generateDeviceSecret();
 
-    await this.prisma.client.deviceCredential.updateMany({
+    await this.prisma.client.deviceApiKey.updateMany({
       where: {
         deviceId: activation.device.id,
-        status: $Enums.DeviceCredentialStatus.active,
+        status: $Enums.DeviceApiKeyStatus.active,
       },
       data: {
-        status: $Enums.DeviceCredentialStatus.revoked,
+        status: $Enums.DeviceApiKeyStatus.revoked,
         revokedAt: new Date(),
         revokedReason: 'Superseded by a new approved activation',
       },
     });
 
-    const credential = await this.prisma.client.deviceCredential.create({
+    const apiKey = await this.prisma.client.deviceApiKey.create({
       data: {
         tenantId: activation.tenant.id,
         deviceId: activation.device.id,
-        secretHash: this.hashSecret(deviceSecret),
-        status: $Enums.DeviceCredentialStatus.active,
+        secretHash: this.hashSecret(apiKeySecret),
+        status: $Enums.DeviceApiKeyStatus.active,
         issuedAt: new Date(),
       },
       select: {
@@ -514,10 +531,10 @@ export class AuthService {
       tenantId: activation.tenant.id,
       tenantSlug: activation.tenant.slug,
       device: activation.device,
-      credential: {
-        id: credential.id,
-        status: credential.status,
-        secret: deviceSecret,
+      apiKey: {
+        id: apiKey.id,
+        status: apiKey.status,
+        key: `dapi_${apiKey.id}.${apiKeySecret}`,
       },
     };
   }
@@ -526,10 +543,12 @@ export class AuthService {
     dto: DeviceTokenExchangeDto,
     meta?: DeviceRequestMeta,
   ) {
-    const credential = await this.prisma.client.deviceCredential.findFirst({
+    const parsedApiKey = this.parseDeviceApiKey(dto.apiKey);
+
+    const apiKey = await this.prisma.client.deviceApiKey.findFirst({
       where: {
-        id: dto.credentialId,
-        status: $Enums.DeviceCredentialStatus.active,
+        id: parsedApiKey.apiKeyId,
+        status: $Enums.DeviceApiKeyStatus.active,
       },
       include: {
         tenant: {
@@ -548,32 +567,32 @@ export class AuthService {
       },
     });
 
-    if (!credential) {
-      throw new UnauthorizedException('Invalid device credential');
+    if (!apiKey) {
+      throw new UnauthorizedException('Invalid device API key');
     }
 
-    if (credential.expiresAt && credential.expiresAt.getTime() < Date.now()) {
-      await this.prisma.client.deviceCredential.update({
-        where: { id: credential.id },
-        data: { status: $Enums.DeviceCredentialStatus.expired },
+    if (apiKey.expiresAt && apiKey.expiresAt.getTime() < Date.now()) {
+      await this.prisma.client.deviceApiKey.update({
+        where: { id: apiKey.id },
+        data: { status: $Enums.DeviceApiKeyStatus.expired },
       });
-      throw new UnauthorizedException('Device credential expired');
+      throw new UnauthorizedException('Device API key expired');
     }
 
-    if (this.hashSecret(dto.credentialSecret.trim()) !== credential.secretHash) {
-      throw new UnauthorizedException('Invalid device credential');
+    if (this.hashSecret(parsedApiKey.apiKeySecret) !== apiKey.secretHash) {
+      throw new UnauthorizedException('Invalid device API key');
     }
 
-    if (credential.tenant.status !== $Enums.RecordStatus.active) {
+    if (apiKey.tenant.status !== $Enums.RecordStatus.active) {
       throw new UnauthorizedException('Tenant not active');
     }
 
     return this.issueDeviceSession(
       {
-        tenantId: credential.tenant.id,
-        tenantSlug: credential.tenant.slug,
-        deviceId: credential.device.id,
-        credentialId: credential.id,
+        tenantId: apiKey.tenant.id,
+        tenantSlug: apiKey.tenant.slug,
+        deviceId: apiKey.device.id,
+        apiKeyId: apiKey.id,
       },
       meta,
     );
@@ -710,30 +729,30 @@ export class AuthService {
     };
   }
 
-  async revokeDeviceCredential(dto: DeviceCredentialRevokeDto) {
-    const credential = await this.prisma.client.deviceCredential.findUnique({
-      where: { id: dto.credentialId },
+  async revokeDeviceApiKey(dto: DeviceApiKeyRevokeDto) {
+    const apiKey = await this.prisma.client.deviceApiKey.findUnique({
+      where: { id: dto.apiKeyId },
       select: {
         id: true,
         status: true,
       },
     });
 
-    if (!credential) {
-      throw new NotFoundException('Credential not found');
+    if (!apiKey) {
+      throw new NotFoundException('API key not found');
     }
 
-    if (credential.status === $Enums.DeviceCredentialStatus.revoked) {
+    if (apiKey.status === $Enums.DeviceApiKeyStatus.revoked) {
       return {
-        credentialId: credential.id,
+        apiKeyId: apiKey.id,
         revoked: false,
       };
     }
 
-    await this.prisma.client.deviceCredential.update({
-      where: { id: credential.id },
+    await this.prisma.client.deviceApiKey.update({
+      where: { id: apiKey.id },
       data: {
-        status: $Enums.DeviceCredentialStatus.revoked,
+        status: $Enums.DeviceApiKeyStatus.revoked,
         revokedAt: new Date(),
         revokedReason: dto.reason?.trim() || 'Revoked by admin',
       },
@@ -741,7 +760,7 @@ export class AuthService {
 
     const activeSessions = await this.prisma.client.deviceSession.findMany({
       where: {
-        credentialId: credential.id,
+        apiKeyId: apiKey.id,
         revokedAt: null,
       },
       select: {
@@ -751,7 +770,7 @@ export class AuthService {
 
     await this.prisma.client.deviceSession.updateMany({
       where: {
-        credentialId: credential.id,
+        apiKeyId: apiKey.id,
         revokedAt: null,
       },
       data: {
@@ -764,7 +783,7 @@ export class AuthService {
     );
 
     return {
-      credentialId: credential.id,
+      apiKeyId: apiKey.id,
       revoked: true,
       revokedAt: new Date().toISOString(),
     };
