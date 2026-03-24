@@ -8,7 +8,7 @@ Mantener el modelo de datos simple, seguro y escalable para autenticacion de dis
 
 1. Agregar limpieza programada de `device_activation_requests` vencidas.
 2. Agregar limpieza de `device_sessions` vencidas/revocadas.
-3. Auditar rotacion de `device_credentials` por politica (cada 90-180 dias).
+3. Auditar rotacion de `device_api_keys` por politica (cada 90-180 dias).
 
 ## Prioridad Media
 

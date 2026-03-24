@@ -9,7 +9,7 @@
 ## Entidades Clave de Seguridad de Dispositivo
 
 1. `DeviceActivationRequest`
-2. `DeviceCredential`
+2. `DeviceApiKey`
 3. `DeviceSession`
 
 ## Entidades Clave de Impresion
@@ -22,11 +22,11 @@
 ## Relaciones Relevantes
 
 1. Tenant 1:N PrintDevice.
-2. PrintDevice 1:N DeviceCredential.
-3. DeviceCredential 1:N DeviceSession.
+2. PrintDevice 1:N DeviceApiKey.
+3. DeviceApiKey 1:N DeviceSession.
 4. PrintJob 1:N PrintJobLog.
 
 ## Consideraciones
 
-1. Se usa hash para activationCode, credentialSecret y refreshToken.
+1. Se usa hash para activationCode, apiKey y refreshToken.
 2. Estados de dispositivo dependen de presencia WS operativa.

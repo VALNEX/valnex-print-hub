@@ -15,9 +15,9 @@
 - Proposito: solicitudes one-time de activacion de cliente.
 - Claves: `activationCodeHash`, `status`, `expiresAt`, `approvedByAdminId`.
 
-## platform.device_credentials
+## platform.device_api_keys
 
-- Proposito: credenciales persistentes por dispositivo.
+- Proposito: API keys persistentes por dispositivo.
 - Claves: `secretHash`, `status`, `revokedAt`, `expiresAt`.
 
 ## platform.device_sessions

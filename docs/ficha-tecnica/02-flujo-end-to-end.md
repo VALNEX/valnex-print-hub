@@ -5,7 +5,7 @@
 1. Cliente solicita activacion (`/api/auth/device/activation/request`).
 2. Admin consulta pendientes (`/api/auth/device/activation/pending`).
 3. Admin aprueba (`/api/auth/device/activation/approve`).
-4. Cliente intercambia credencial (`/api/auth/device/token`).
+4. Cliente intercambia API key (`/api/auth/device/token`).
 5. Cliente usa access token en WS `/print`.
 
 ## B) Presencia y Disponibilidad
@@ -25,7 +25,7 @@
 
 1. Refresh periodico con `POST /api/auth/device/refresh`.
 2. Logout con `POST /api/auth/device/logout`.
-3. Revocacion forzada por admin con `POST /api/auth/device/credential/revoke`.
+3. Revocacion forzada por admin con `POST /api/auth/device/api-key/revoke`.
 
 ## E) Redis en el Flujo
 
